@@ -65,6 +65,24 @@
   cursor: pointer;
 }
 
+.checkbox-group {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .config-section select {
   width: 100%;
   max-width: 300px;
@@ -189,6 +207,52 @@
 
 .save-session-btn:hover {
   background: #059669;
+}
+
+.new-session-btn {
+  margin-left: 12px;
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.new-session-btn:hover {
+  background: #2563eb;
+}
+
+.add-words-btn {
+  padding: 8px 16px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.add-words-btn:hover {
+  background: #059669;
+}
+
+.words-placeholder {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.words-placeholder p {
+  margin: 0;
 }
 
 .words-input {

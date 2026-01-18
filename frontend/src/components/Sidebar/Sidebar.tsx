@@ -13,8 +13,7 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
     { id: 'translate', label: 'Traduzir', icon: '🎵' },
     { id: 'videos', label: 'Meus Vídeos', icon: '📹' },
     { id: 'practice', label: 'Treinar Inglês', icon: '📚' },
-    { id: 'api-keys', label: 'Chaves API', icon: '🔑' },
-    { id: 'usage', label: 'Uso/Cota', icon: '📊' },
+    { id: 'llm-models', label: 'Modelos LLM', icon: '🤖' },
   ];
 
   return (

@@ -22,12 +22,14 @@ interface PracticeStats {
   skipped: number;
 }
 
-type PracticeMode = 'music-context' | 'new-context' | 'words-only';
+type PracticeContext = 'music-context' | 'new-context' | 'words';
+type PracticeModality = 'complete' | 'translate';
 type TranslationDirection = 'en-to-pt' | 'pt-to-en';
 type Difficulty = 'easy' | 'medium' | 'hard';
 
 export const KnowledgePractice = () => {
-  const [mode, setMode] = useState<PracticeMode>('music-context');
+  const [modalities, setModalities] = useState<PracticeModality[]>(['translate']);
+  const [contexts, setContexts] = useState<PracticeContext[]>(['music-context']);
   const [direction, setDirection] = useState<TranslationDirection>('en-to-pt');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [currentPhrase, setCurrentPhrase] = useState<PracticePhrase | null>(null);
@@ -57,9 +59,13 @@ export const KnowledgePractice = () => {
   const [customPrompt, setCustomPrompt] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<{ service: string; model: string } | null>(null);
   const [availableAgents, setAvailableAgents] = useState<Array<{ service: string; model: string; display_name: string; available: boolean }>>([]);
-  const [customWords, setCustomWords] = useState<string[]>([]);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [currentWord, setCurrentWord] = useState<PracticePhrase | null>(null);
   const [wordTranslations, setWordTranslations] = useState<{ [word: string]: string }>({});
+  const [showAddWordsModal, setShowAddWordsModal] = useState(false);
+  const [wordsInput, setWordsInput] = useState('');
+  const [wordsList, setWordsList] = useState<Array<{ id: string; word: string; language: string; translation: string | null; created_at: string | null }>>([]);
+  const [loadingWords, setLoadingWords] = useState(false);
+  const [wordsFilterLanguage, setWordsFilterLanguage] = useState<string>('');
 
   useEffect(() => {
     loadAvailableVideos();
@@ -96,13 +102,13 @@ Agora crie a frase usando as palavras: {words}`;
 
   // Salva frase não respondida sempre que mudar
   useEffect(() => {
-    if (currentPhrase && !showAnswer && !userAnswer.trim() && mode !== 'words-only') {
+    if (currentPhrase && !showAnswer && !userAnswer.trim() && !contexts.includes('words')) {
       storage.saveCurrentPhrase(currentPhrase, userAnswer);
     } else if (showAnswer || userAnswer.trim()) {
       // Limpa se foi respondida
       storage.clearCurrentPhrase();
     }
-  }, [currentPhrase, showAnswer, userAnswer, mode]);
+  }, [currentPhrase, showAnswer, userAnswer, contexts]);
 
   const loadAvailableVideos = async () => {
     try {
@@ -169,6 +175,17 @@ Agora crie a frase usando as palavras: {words}`;
   };
 
   const loadNextPhrase = async () => {
+    // Validação: precisa ter pelo menos uma modalidade e um contexto
+    if (modalities.length === 0) {
+      alert('Selecione pelo menos uma modalidade (Traduzir ou Completar Frases)');
+      return;
+    }
+    
+    if (contexts.length === 0) {
+      alert('Selecione pelo menos um contexto');
+      return;
+    }
+
     setLoading(true);
     setShowAnswer(false);
     setUserAnswer('');
@@ -177,17 +194,22 @@ Agora crie a frase usando as palavras: {words}`;
     storage.clearCurrentPhrase();
 
     try {
+      // Seleciona contexto aleatório dos selecionados
+      const selectedContext = contexts.length > 0 
+        ? contexts[Math.floor(Math.random() * contexts.length)]
+        : 'music-context';
+
       let phrase: PracticePhrase;
 
-      if (mode === 'music-context') {
-        // Modalidade 1: Frases das músicas
+      if (selectedContext === 'music-context') {
+        // Contexto: Frases das músicas
         phrase = await videoApi.getMusicPhrase({
           direction,
           difficulty,
           video_ids: selectedVideos.length > 0 ? selectedVideos : undefined,
         });
-      } else {
-        // Modalidade 2: Frases novas com palavras das músicas
+      } else if (selectedContext === 'new-context') {
+        // Contexto: Frases novas com palavras das músicas
         // Busca chaves de API do localStorage para enviar ao backend
         const apiKeys: { openrouter?: string; groq?: string; together?: string } = {};
         
@@ -208,6 +230,9 @@ Agora crie a frase usando as palavras: {words}`;
           custom_prompt: customPrompt || undefined,
           preferred_agent: selectedAgent || undefined,
         });
+      } else {
+        // Contexto: Palavras (não deve chegar aqui, mas mantido para segurança)
+        throw new Error('Contexto de palavras deve usar loadNextWord');
       }
 
       setCurrentPhrase(phrase);
@@ -220,40 +245,67 @@ Agora crie a frase usando as palavras: {words}`;
     }
   };
 
-  const loadNextWord = () => {
-    if (customWords.length === 0) {
-      alert('Adicione palavras primeiro!');
+  const loadNextWord = async () => {
+    // Validação: precisa ter pelo menos uma modalidade
+    if (modalities.length === 0) {
+      alert('Selecione pelo menos uma modalidade (Traduzir ou Completar Frases)');
       return;
     }
+
+    setLoading(true);
+    setShowAnswer(false);
+    setUserAnswer('');
+    setIsCorrect(null);
     
-    if (currentWordIndex < customWords.length - 1) {
-      setCurrentWordIndex(currentWordIndex + 1);
-      setUserAnswer('');
-      setShowAnswer(false);
-      setIsCorrect(null);
-    } else {
-      // Volta para o início
-      setCurrentWordIndex(0);
-      setUserAnswer('');
-      setShowAnswer(false);
-      setIsCorrect(null);
+    try {
+      const wordData = await videoApi.getWordForPractice({
+        direction,
+        difficulty,
+        video_ids: selectedVideos.length > 0 ? selectedVideos : undefined,
+        limit: 1
+      });
+      
+      // Converte para formato PracticePhrase
+      const wordPhrase: PracticePhrase = {
+        id: wordData.id,
+        original: direction === 'en-to-pt' ? wordData.word : (wordData.translation || ''),
+        translated: direction === 'en-to-pt' ? (wordData.translation || '') : wordData.word,
+        source_language: wordData.source_language,
+        target_language: wordData.target_language
+      };
+      
+      setCurrentWord(wordPhrase);
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Erro ao carregar palavra. Traduza algumas músicas primeiro ou adicione palavras usando o botão "Adicionar Palavras".');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const checkWordTranslation = async (word: string, translation: string) => {
-    if (!word || !translation.trim()) {
+  const checkWordTranslation = async () => {
+    if (!currentWord || !userAnswer.trim()) {
       return;
     }
 
     try {
-      // Para palavras, usamos uma verificação mais simples
-      // Busca tradução no backend ou usa verificação direta
+      // Determina a palavra original e a tradução esperada
+      const sourceWord = direction === 'en-to-pt' ? currentWord.original : currentWord.translated;
+      const expectedTranslation = direction === 'en-to-pt' ? currentWord.translated : currentWord.original;
+      
+      // Se não tem tradução salva, passa a palavra original para o backend traduzir
       const checkParams: any = {
-        phrase_id: `word-${word}`,
-        user_answer: translation.trim(),
+        phrase_id: currentWord.id,
+        user_answer: userAnswer.trim(),
         direction,
-        correct_answer: wordTranslations[word] || word, // Se não tiver tradução salva, usa a palavra
       };
+      
+      // Se temos uma tradução esperada, passa ela
+      if (expectedTranslation) {
+        checkParams.correct_answer = expectedTranslation;
+      } else {
+        // Se não tem tradução, passa a palavra original para o backend tentar traduzir
+        checkParams.word = sourceWord;
+      }
       
       const result = await videoApi.checkPracticeAnswer(checkParams);
       setIsCorrect(result.is_correct);
@@ -261,10 +313,10 @@ Agora crie a frase usando as palavras: {words}`;
       updateStats(result.is_correct);
       
       // Salva tradução correta sempre (para usar depois)
-      if (result.correct_answer) {
+      if (result.correct_answer && sourceWord) {
         setWordTranslations(prev => ({
           ...prev,
-          [word]: result.correct_answer
+          [sourceWord]: result.correct_answer
         }));
       }
     } catch (error: any) {
@@ -274,7 +326,25 @@ Agora crie a frase usando as palavras: {words}`;
     }
   };
 
-  const handleAddWords = (wordsText: string) => {
+  const loadWordsList = async () => {
+    setLoadingWords(true);
+    try {
+      const result = await videoApi.listWords(wordsFilterLanguage || undefined);
+      setWordsList(result.words);
+    } catch (error: any) {
+      console.error('Erro ao carregar palavras:', error);
+    } finally {
+      setLoadingWords(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showAddWordsModal) {
+      loadWordsList();
+    }
+  }, [showAddWordsModal, wordsFilterLanguage]);
+
+  const handleAddWords = async (wordsText: string) => {
     const words = wordsText
       .split(/[,\n\r]+/)
       .map(w => w.trim())
@@ -285,12 +355,39 @@ Agora crie a frase usando as palavras: {words}`;
       return;
     }
     
-    setCustomWords(words);
-    setCurrentWordIndex(0);
-    setUserAnswer('');
-    setShowAnswer(false);
-    setIsCorrect(null);
-    setWordTranslations({});
+    try {
+      // Determina idioma baseado na direção atual
+      const language = direction === 'en-to-pt' ? 'en' : 'pt';
+      
+      const result = await videoApi.addWords({
+        words,
+        language
+      });
+      
+      alert(`Palavras adicionadas com sucesso!\n\nAdicionadas: ${result.added}\nJá existiam: ${result.skipped}\nTotal processadas: ${result.total}`);
+      
+      setWordsInput('');
+      await loadWordsList();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || error.message || 'Erro ao adicionar palavras';
+      console.error('Erro ao adicionar palavras:', error);
+      alert(errorMessage);
+    }
+  };
+
+  const handleDeleteWord = async (wordId: string) => {
+    if (!window.confirm('Deseja realmente deletar esta palavra?')) {
+      return;
+    }
+
+    try {
+      await videoApi.deleteWord(wordId);
+      await loadWordsList();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || error.message || 'Erro ao deletar palavra';
+      console.error('Erro ao deletar palavra:', error);
+      alert(errorMessage);
+    }
   };
 
   const checkAnswer = async () => {
@@ -377,7 +474,7 @@ Agora crie a frase usando as palavras: {words}`;
     setIsCorrect(null);
     storage.clearCurrentPhrase();
     
-    if (mode === 'words-only' && customWords.length > 0) {
+    if (contexts.includes('words')) {
       loadNextWord();
     } else {
       loadNextPhrase();
@@ -411,6 +508,18 @@ Agora crie a frase usando as palavras: {words}`;
     setStats(resetStats);
     // Limpa do localStorage também
     storage.clearPracticeStats();
+  };
+
+  const startNewSession = () => {
+    if (window.confirm('Deseja iniciar uma nova sessão? Isso irá resetar as estatísticas e limpar o progresso atual.')) {
+      resetStats();
+      setCurrentPhrase(null);
+      setUserAnswer('');
+      setShowAnswer(false);
+      setIsCorrect(null);
+      setCurrentWordIndex(0);
+      storage.clearCurrentPhrase();
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -465,72 +574,110 @@ Agora crie a frase usando as palavras: {words}`;
       <div className="practice-config">
         <div className="config-section">
           <label>Modalidade:</label>
-          <div className="radio-group">
+          <div className="checkbox-group">
             <label>
               <input
-                type="radio"
+                type="checkbox"
+                value="translate"
+                checked={modalities.includes('translate')}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setModalities([...modalities, 'translate']);
+                  } else {
+                    setModalities(modalities.filter(m => m !== 'translate'));
+                  }
+                }}
+              />
+              <span>Traduzir</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                value="complete"
+                checked={modalities.includes('complete')}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setModalities([...modalities, 'complete']);
+                  } else {
+                    setModalities(modalities.filter(m => m !== 'complete'));
+                  }
+                }}
+              />
+              <span>Completar Frases</span>
+            </label>
+          </div>
+          {modalities.length === 0 && (
+            <p style={{ color: '#ef4444', fontSize: '0.875rem', marginTop: '8px' }}>
+              Selecione pelo menos uma modalidade
+            </p>
+          )}
+        </div>
+
+        <div className="config-section">
+          <label>Contexto:</label>
+          <div className="checkbox-group">
+            <label>
+              <input
+                type="checkbox"
                 value="music-context"
-                checked={mode === 'music-context'}
-                onChange={(e) => setMode(e.target.value as PracticeMode)}
+                checked={contexts.includes('music-context')}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setContexts([...contexts, 'music-context']);
+                  } else {
+                    setContexts(contexts.filter(c => c !== 'music-context'));
+                  }
+                }}
               />
               <span>Frases das Músicas</span>
             </label>
             <label>
               <input
-                type="radio"
+                type="checkbox"
                 value="new-context"
-                checked={mode === 'new-context'}
-                onChange={(e) => setMode(e.target.value as PracticeMode)}
+                checked={contexts.includes('new-context')}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setContexts([...contexts, 'new-context']);
+                  } else {
+                    setContexts(contexts.filter(c => c !== 'new-context'));
+                  }
+                }}
               />
               <span>Palavras em Novos Contextos</span>
             </label>
             <label>
               <input
-                type="radio"
-                value="words-only"
-                checked={mode === 'words-only'}
-                onChange={(e) => setMode(e.target.value as PracticeMode)}
+                type="checkbox"
+                value="words"
+                checked={contexts.includes('words')}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setContexts([...contexts, 'words']);
+                  } else {
+                    setContexts(contexts.filter(c => c !== 'words'));
+                  }
+                }}
               />
-              <span>Adicionar Palavras</span>
+              <span>Palavras</span>
             </label>
           </div>
+          {contexts.length === 0 && (
+            <p style={{ color: '#ef4444', fontSize: '0.875rem', marginTop: '8px' }}>
+              Selecione pelo menos um contexto
+            </p>
+          )}
         </div>
 
-        {mode === 'words-only' && (
-          <div className="config-section">
-            <label>Adicionar Palavras (separadas por vírgula ou linha):</label>
-            <textarea
-              placeholder="Digite as palavras aqui, separadas por vírgula ou uma por linha...&#10;Exemplo: love, heart, beautiful&#10;ou&#10;love&#10;heart&#10;beautiful"
-              className="words-input"
-              rows={4}
-              onBlur={(e) => {
-                const words = e.target.value;
-                if (words.trim()) {
-                  handleAddWords(words);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.ctrlKey) {
-                  handleAddWords(e.currentTarget.value);
-                }
-              }}
-            />
-            {customWords.length > 0 && (
-              <div className="words-info">
-                <p>{customWords.length} palavra(s) adicionada(s)</p>
-                <button onClick={() => {
-                  setCustomWords([]);
-                  setCurrentWordIndex(0);
-                  setUserAnswer('');
-                  setShowAnswer(false);
-                  setIsCorrect(null);
-                }} className="clear-words-btn">
-                  Limpar Palavras
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="config-section">
+          <button 
+            onClick={() => setShowAddWordsModal(true)} 
+            className="add-words-btn"
+            style={{ width: 'auto', marginTop: '8px' }}
+          >
+            ➕ Adicionar Palavras
+          </button>
+        </div>
 
         <div className="config-section">
           <label>Direção da Tradução:</label>
@@ -571,7 +718,7 @@ Agora crie a frase usando as palavras: {words}`;
         <div className="config-section">
           <div className="config-section-header">
             <label>Vídeos (opcional - deixe vazio para usar todos):</label>
-            {mode === 'new-context' && (
+            {contexts.includes('new-context') && (
               <button 
                 onClick={() => {
                   setShowConfigModal(true);
@@ -636,6 +783,9 @@ Agora crie a frase usando as palavras: {words}`;
           <span className="stat-label">Puladas:</span>
           <span className="stat-value skipped">{stats.skipped || 0}</span>
         </div>
+        <button onClick={startNewSession} className="new-session-btn" title="Iniciar nova sessão">
+          🆕 Iniciar Nova Sessão
+        </button>
         <button onClick={resetStats} className="reset-stats-btn">
           Resetar
         </button>
@@ -645,17 +795,14 @@ Agora crie a frase usando as palavras: {words}`;
       </div>
 
       <div className="practice-exercise">
-        {mode === 'words-only' && customWords.length > 0 && !loading && (
+        {contexts.includes('words') && currentWord && !loading && (
           <div className="exercise-content">
             <div className="phrase-display">
               <div className="phrase-label">
                 {direction === 'en-to-pt' ? 'Traduza a palavra do Inglês:' : 'Traduza a palavra do Português:'}
               </div>
               <div className="phrase-text word-text">
-                {customWords[currentWordIndex]}
-              </div>
-              <div className="word-progress">
-                Palavra {currentWordIndex + 1} de {customWords.length}
+                {direction === 'en-to-pt' ? currentWord.original : currentWord.translated}
               </div>
             </div>
 
@@ -667,7 +814,7 @@ Agora crie a frase usando as palavras: {words}`;
                 onChange={(e) => setUserAnswer(e.target.value)}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter' && !showAnswer) {
-                    checkWordTranslation(customWords[currentWordIndex], userAnswer);
+                    checkWordTranslation();
                   } else if (e.key === 'Enter' && showAnswer) {
                     loadNextWord();
                   }
@@ -680,7 +827,7 @@ Agora crie a frase usando as palavras: {words}`;
               {!showAnswer && (
                 <div className="action-buttons">
                   <button 
-                    onClick={() => checkWordTranslation(customWords[currentWordIndex], userAnswer)} 
+                    onClick={checkWordTranslation} 
                     className="check-btn" 
                     disabled={!userAnswer.trim()}
                   >
@@ -697,16 +844,14 @@ Agora crie a frase usando as palavras: {words}`;
                   <div className="feedback-header">
                     {isCorrect ? '✅ Correto!' : '❌ Incorreto'}
                   </div>
-                  {wordTranslations[customWords[currentWordIndex]] && (
-                    <div className="correct-answer">
-                      <strong>Tradução correta:</strong>
-                      <div className="answer-text">
-                        {wordTranslations[customWords[currentWordIndex]]}
-                      </div>
+                  <div className="correct-answer">
+                    <strong>Tradução correta:</strong>
+                    <div className="answer-text">
+                      {direction === 'en-to-pt' ? currentWord.translated : currentWord.original}
                     </div>
-                  )}
+                  </div>
                   <button onClick={loadNextWord} className="next-btn">
-                    {currentWordIndex < customWords.length - 1 ? 'Próxima Palavra' : 'Recomeçar'}
+                    Próxima Palavra
                   </button>
                 </div>
               )}
@@ -714,28 +859,37 @@ Agora crie a frase usando as palavras: {words}`;
           </div>
         )}
 
-        {mode === 'words-only' && customWords.length === 0 && !loading && (
+        {contexts.includes('words') && !currentWord && !loading && (
           <div className="exercise-placeholder">
-            <p>Adicione palavras acima para começar a praticar!</p>
-          </div>
-        )}
-
-        {!currentPhrase && !loading && mode !== 'words-only' && (
-          <div className="exercise-placeholder">
-            <p>Clique em "Iniciar" para começar a praticar!</p>
-            <button onClick={loadNextPhrase} className="start-btn">
+            <p>Clique em "Iniciar" para começar a praticar com palavras do banco de dados!</p>
+            <button onClick={loadNextWord} className="start-btn">
               Iniciar
             </button>
           </div>
         )}
 
-        {loading && mode !== 'words-only' && (
+        {contexts.includes('words') && loading && (
+          <div className="exercise-loading">
+            <p>Carregando palavra...</p>
+          </div>
+        )}
+
+        {!currentPhrase && !loading && !contexts.includes('words') && (
+          <div className="exercise-placeholder">
+            <p>Clique em "Iniciar" para começar a praticar!</p>
+            <button onClick={loadNextPhrase} className="start-btn" disabled={modalities.length === 0 || contexts.length === 0}>
+              Iniciar
+            </button>
+          </div>
+        )}
+
+        {loading && !contexts.includes('words') && (
           <div className="exercise-loading">
             <p>Carregando frase...</p>
           </div>
         )}
 
-        {currentPhrase && !loading && mode !== 'words-only' && (
+        {currentPhrase && !loading && !contexts.includes('words') && (
           <div className="exercise-content">
             <div className="phrase-display">
               <div className="phrase-label">
@@ -901,6 +1055,122 @@ Agora crie a frase usando as palavras: {words}`;
                 className="modal-btn-secondary"
               >
                 Restaurar Padrão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Gerenciar Palavras */}
+      {showAddWordsModal && (
+        <div className="modal-overlay" onClick={() => setShowAddWordsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+            <div className="modal-header">
+              <h3>📚 Gerenciar Palavras</h3>
+              <button className="modal-close" onClick={() => setShowAddWordsModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="config-field">
+                <label>Adicionar Novas Palavras:</label>
+                <textarea
+                  value={wordsInput}
+                  onChange={(e) => setWordsInput(e.target.value)}
+                  placeholder="Digite as palavras aqui, separadas por vírgula ou uma por linha...&#10;Exemplo: love, heart, beautiful&#10;ou&#10;love&#10;heart&#10;beautiful"
+                  className="words-input"
+                  rows={4}
+                />
+                <div className="prompt-help" style={{ marginTop: '8px' }}>
+                  <strong>Dica:</strong> As palavras serão adicionadas no idioma atual da direção de tradução ({direction === 'en-to-pt' ? 'Inglês' : 'Português'})
+                </div>
+                <button 
+                  onClick={() => handleAddWords(wordsInput)} 
+                  className="modal-btn-primary"
+                  disabled={!wordsInput.trim()}
+                  style={{ marginTop: '12px', width: 'auto' }}
+                >
+                  ➕ Adicionar Palavras
+                </button>
+              </div>
+
+              <div className="config-field" style={{ marginTop: '32px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <label style={{ margin: 0 }}>Palavras Adicionadas ({wordsList.length}):</label>
+                  <select
+                    value={wordsFilterLanguage}
+                    onChange={(e) => setWordsFilterLanguage(e.target.value)}
+                    style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                  >
+                    <option value="">Todos os idiomas</option>
+                    <option value="en">Inglês</option>
+                    <option value="pt">Português</option>
+                  </select>
+                </div>
+                
+                {loadingWords ? (
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
+                    Carregando palavras...
+                  </div>
+                ) : wordsList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
+                    Nenhuma palavra adicionada ainda. Adicione palavras acima para começar.
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px' }}>
+                    {wordsList.map((word) => (
+                      <div key={word.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', borderBottom: '1px solid var(--border-color)', marginBottom: '4px' }}>
+                        <div>
+                          <strong>{word.word}</strong>
+                          <span style={{ marginLeft: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                            ({word.language === 'en' ? 'Inglês' : 'Português'})
+                          </span>
+                          {word.translation && (
+                            <span style={{ marginLeft: '8px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                              → {word.translation}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleDeleteWord(word.id)}
+                          style={{
+                            padding: '4px 8px',
+                            background: '#ef4444',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem'
+                          }}
+                          title="Deletar palavra"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="prompt-help" style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '6px' }}>
+                <strong>ℹ️ Informações:</strong>
+                <ul style={{ marginTop: '8px', marginBottom: 0 }}>
+                  <li>As palavras adicionadas manualmente complementam as palavras das músicas traduzidas</li>
+                  <li>A modalidade "Palavras" busca palavras tanto das músicas quanto do banco de dados</li>
+                  <li>Você pode filtrar palavras por idioma usando o seletor acima</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                onClick={() => {
+                  setShowAddWordsModal(false);
+                  setWordsInput('');
+                  setWordsFilterLanguage('');
+                }} 
+                className="modal-btn-secondary"
+              >
+                Fechar
               </button>
             </div>
           </div>

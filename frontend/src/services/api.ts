@@ -157,8 +157,42 @@ export const videoApi = {
     phrase_id: string;
     user_answer: string;
     direction: string;
+    correct_answer?: string;
+    word?: string;
   }): Promise<{ is_correct: boolean; correct_answer: string; similarity: number }> => {
     const response = await api.post('/api/practice/check-answer', params);
+    return response.data;
+  },
+
+  addWords: async (params: {
+    words: string[];
+    language: string;
+  }): Promise<{ message: string; added: number; skipped: number; total: number }> => {
+    const response = await api.post('/api/practice/words', params);
+    return response.data;
+  },
+
+  getWordForPractice: async (params: {
+    direction: string;
+    difficulty: string;
+    video_ids?: string[];
+    limit?: number;
+  }): Promise<any> => {
+    const response = await api.post('/api/practice/words/get', params);
+    return response.data;
+  },
+
+  listWords: async (language?: string): Promise<{ words: Array<{ id: string; word: string; language: string; translation: string | null; created_at: string | null }>; total: number }> => {
+    const params: any = {};
+    if (language) {
+      params.language = language;
+    }
+    const response = await api.get('/api/practice/words', { params });
+    return response.data;
+  },
+
+  deleteWord: async (wordId: string): Promise<{ message: string; deleted_word: string }> => {
+    const response = await api.delete(`/api/practice/words/${wordId}`);
     return response.data;
   },
 };
@@ -171,6 +205,11 @@ export interface ApiKeyStatus {
     available: boolean;
     blocked: boolean;
     status: string;
+    reason?: string | null;
+    quota_used?: number | null;
+    quota_limit?: number | null;
+    quota_percentage?: number | null;
+    daily_cost?: number | null;
   }>;
   available_models: string[];
   blocked_models: string[];
@@ -178,10 +217,11 @@ export interface ApiKeyStatus {
 }
 
 export const apiKeysApi = {
-  checkStatus: async (api_key: string, service: string = 'gemini'): Promise<ApiKeyStatus> => {
+  checkStatus: async (api_key: string, service: string = 'gemini', is_free_tier: string = 'free'): Promise<ApiKeyStatus> => {
     const response = await api.post<ApiKeyStatus>('/api/keys/check-status', {
       api_key,
       service,
+      is_free_tier,
     });
     return response.data;
   },

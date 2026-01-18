@@ -33,6 +33,12 @@ def setup_logging(log_level: str = "INFO"):
     console_handler.setLevel(logging.ERROR)  # Apenas ERROR e CRITICAL
     console_handler.setFormatter(logging.Formatter(log_format, date_format))
     
+    # Adiciona filtro para garantir que apenas erros críticos apareçam
+    def error_only_filter(record):
+        return record.levelno >= logging.ERROR
+    
+    console_handler.addFilter(error_only_filter)
+    
     # Handler para arquivo - todos os logs
     file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
     file_handler.setLevel(getattr(logging, log_level.upper()))
@@ -47,9 +53,19 @@ def setup_logging(log_level: str = "INFO"):
     
     # Suprime completamente logs de acesso HTTP do uvicorn
     uvicorn_access = logging.getLogger("uvicorn.access")
-    uvicorn_access.setLevel(logging.CRITICAL)  # Suprime completamente
+    uvicorn_access.setLevel(logging.CRITICAL + 1)  # Nível acima de CRITICAL para suprimir completamente
     uvicorn_access.propagate = False
     uvicorn_access.handlers = []  # Remove todos os handlers
+    
+    # Suprime logs do uvicorn server (startup, etc) no console
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.setLevel(logging.ERROR)  # Apenas erros críticos
+    uvicorn_logger.propagate = False  # Não propaga para root logger
+    
+    # Suprime logs de startup do uvicorn
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error.setLevel(logging.ERROR)
+    uvicorn_error.propagate = False
     
     # Configura loggers específicos da aplicação
     app_logger = logging.getLogger("app")
@@ -62,16 +78,18 @@ def setup_logging(log_level: str = "INFO"):
     logging.getLogger("app.services.translation_factory").setLevel(logging.DEBUG)
     
     # Reduz verbosidade de bibliotecas externas
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("google").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("youtube_transcript_api").setLevel(logging.WARNING)
-    logging.getLogger("argostranslate").setLevel(logging.WARNING)
-    logging.getLogger("deep_translator").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("google").setLevel(logging.ERROR)
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+    logging.getLogger("requests").setLevel(logging.ERROR)
+    logging.getLogger("youtube_transcript_api").setLevel(logging.ERROR)
+    logging.getLogger("argostranslate").setLevel(logging.ERROR)
+    logging.getLogger("deep_translator").setLevel(logging.ERROR)
     
-    # Suprime logs do uvicorn server (startup, etc) no console
-    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    # Suprime logs do SQLAlchemy (queries, etc)
+    logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.ERROR)
     
     logger = logging.getLogger(__name__)
     # Log de configuração vai para arquivo apenas (não aparece no console)

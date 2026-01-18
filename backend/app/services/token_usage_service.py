@@ -207,3 +207,67 @@ class TokenUsageService:
         except Exception as e:
             logger.error(f"Erro ao obter uso diário: {e}")
             return []
+    
+    def get_today_usage_by_model(
+        self,
+        service: Optional[str] = None,
+        models: Optional[List[str]] = None
+    ) -> Dict[str, Dict]:
+        """
+        Obtém uso de hoje (dia atual) agrupado por modelo
+        Apenas para modelos que foram usados hoje
+        
+        Args:
+            service: Filtrar por serviço (opcional)
+            models: Lista de modelos para filtrar (opcional)
+            
+        Returns:
+            Dict com chave sendo o nome do modelo e valor sendo dict com:
+            - input_tokens: tokens de entrada usados hoje
+            - output_tokens: tokens de saída usados hoje
+            - total_tokens: total de tokens usados hoje
+            - requests: número de requisições hoje
+        """
+        try:
+            # Verifica se a sessão do banco está válida
+            if not self.db:
+                logger.warning("Sessão do banco de dados não disponível")
+                return {}
+            
+            # Pega início do dia atual (00:00:00)
+            today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            query = self.db.query(
+                TokenUsage.model,
+                func.sum(TokenUsage.input_tokens).label('total_input'),
+                func.sum(TokenUsage.output_tokens).label('total_output'),
+                func.sum(TokenUsage.total_tokens).label('total_tokens'),
+                func.sum(TokenUsage.requests).label('total_requests')
+            ).filter(
+                TokenUsage.created_at >= today_start
+            ).group_by(
+                TokenUsage.model
+            )
+            
+            if service:
+                query = query.filter(TokenUsage.service == service)
+            
+            if models:
+                query = query.filter(TokenUsage.model.in_(models))
+            
+            results = query.all()
+            
+            usage_dict = {}
+            for r in results:
+                usage_dict[r.model] = {
+                    'input_tokens': r.total_input or 0,
+                    'output_tokens': r.total_output or 0,
+                    'total_tokens': r.total_tokens or 0,
+                    'requests': r.total_requests or 0
+                }
+            
+            return usage_dict
+        except Exception as e:
+            # Log do erro mas não propaga - retorna dict vazio para não bloquear a verificação
+            logger.debug(f"Erro ao obter uso de hoje por modelo (não crítico): {e}")
+            return {}

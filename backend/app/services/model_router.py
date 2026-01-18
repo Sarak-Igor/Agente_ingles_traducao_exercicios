@@ -138,7 +138,21 @@ class ModelRouter:
         """
         validation_results = {}
         
-        logger.info("Iniciando validação de modelos disponíveis...")
+        logger.debug("Iniciando validação de modelos disponíveis...")
+        
+        # Primeiro, tenta listar modelos disponíveis via API
+        api_available_models = []
+        try:
+            models_response = gemini_client.models.list()
+            if hasattr(models_response, 'models'):
+                api_available_models = [m.name for m in models_response.models if hasattr(m, 'name')]
+            elif hasattr(models_response, '__iter__'):
+                api_available_models = [m.name if hasattr(m, 'name') else str(m) for m in models_response]
+            
+            if api_available_models:
+                logger.debug(f"Modelos disponíveis na API: {api_available_models}")
+        except Exception as list_error:
+            logger.debug(f"Não foi possível listar modelos via API: {list_error}")
         
         for model_name in self.AVAILABLE_MODELS:
             # Se já está bloqueado, marca como indisponível
@@ -148,49 +162,107 @@ class ModelRouter:
                 continue
             
             try:
-                # Testa com uma requisição simples
-                test_prompt = f"Traduza: {test_text}"
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=test_prompt
-                )
+                # Tenta diferentes formatos de nome de modelo
+                model_variants = [
+                    model_name,  # Nome original
+                    f"models/{model_name}",  # Com prefixo models/
+                ]
+                
+                # Se temos lista da API, verifica se o modelo está nela
+                if api_available_models:
+                    # Procura por modelos que contenham o nome
+                    matching_models = [m for m in api_available_models if model_name in m or m.endswith(model_name)]
+                    if matching_models:
+                        model_variants = matching_models[:1] + model_variants  # Prioriza modelos da API
+                
+                response = None
+                used_model_name = None
+                
+                for variant in model_variants:
+                    try:
+                        # Testa com uma requisição simples
+                        test_prompt = f"Traduza: {test_text}"
+                        response = gemini_client.models.generate_content(
+                            model=variant,
+                            contents=test_prompt
+                        )
+                        used_model_name = variant
+                        break
+                    except Exception as variant_error:
+                        error_str = str(variant_error)
+                        # Se for 404, tenta próximo variant
+                        if '404' in error_str or 'NOT_FOUND' in error_str:
+                            continue
+                        # Se for outro erro, propaga
+                        raise
+                
+                if not response:
+                    raise Exception(f"Nenhuma variante do modelo {model_name} funcionou")
                 
                 # Verifica se obteve resposta válida
                 if response:
                     validation_results[model_name] = True
                     self.validated_models[model_name] = True
-                    logger.info(f"✅ Modelo {model_name} está disponível")
+                    logger.debug(f"Modelo {model_name} está disponível")
                 else:
                     validation_results[model_name] = False
                     self.validated_models[model_name] = False
                     self.block_model(model_name, "validation_failed")
-                    logger.warning(f"❌ Modelo {model_name} não retornou resposta válida")
+                    logger.debug(f"Modelo {model_name} não retornou resposta válida")
                     
             except Exception as e:
                 error_str = str(e)
+                error_type = type(e).__name__
                 
-                # Se for erro de quota, bloqueia imediatamente
-                if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str or 'quota' in error_str.lower():
+                # Captura detalhes específicos do erro Gemini (apenas para log em arquivo)
+                error_details = []
+                if hasattr(e, 'status_code'):
+                    error_details.append(f"Status: {e.status_code}")
+                if hasattr(e, 'message'):
+                    error_details.append(f"Mensagem: {e.message}")
+                
+                # Extrai mensagem resumida do erro
+                short_error = error_str
+                if hasattr(e, 'message') and e.message:
+                    # Tenta extrair apenas a mensagem principal do erro Gemini
+                    if isinstance(e.message, str):
+                        # Pega apenas a primeira linha da mensagem
+                        short_error = e.message.split('\n')[0] if '\n' in e.message else e.message
+                    elif isinstance(e.message, dict) and 'message' in e.message:
+                        short_error = e.message['message'].split('\n')[0] if '\n' in str(e.message['message']) else str(e.message['message'])
+                
+                # Log detalhado apenas em arquivo (DEBUG) - não aparece no console
+                logger.debug(f"Erro ao validar modelo {model_name} ({error_type}): {error_str}", exc_info=True)
+                
+                # Se for erro de quota, bloqueia imediatamente (log resumido)
+                if any(keyword in error_str.lower() for keyword in ['429', 'resource_exhausted', 'quota', 'rate limit']):
                     validation_results[model_name] = False
                     self.validated_models[model_name] = False
                     self.block_model(model_name, "quota_exceeded")
-                    logger.warning(f"❌ Modelo {model_name} sem cota disponível - bloqueado")
+                    # Log resumido - apenas mensagem curta, sem traceback
+                    logger.debug(f"Modelo {model_name} sem cota disponível - bloqueado: {short_error[:100]}")
                 # Se for erro 404, modelo não existe
-                elif '404' in error_str or 'NOT_FOUND' in error_str:
+                elif any(keyword in error_str.lower() for keyword in ['404', 'not_found', 'not found']):
                     validation_results[model_name] = False
                     self.validated_models[model_name] = False
                     self.block_model(model_name, "not_found")
-                    logger.warning(f"❌ Modelo {model_name} não encontrado - bloqueado")
+                    logger.debug(f"Modelo {model_name} não encontrado - bloqueado")
+                # Se for erro de autenticação
+                elif any(keyword in error_str.lower() for keyword in ['401', '403', 'invalid', 'unauthorized', 'permission', 'forbidden', 'api key']):
+                    validation_results[model_name] = False
+                    self.validated_models[model_name] = False
+                    logger.debug(f"Modelo {model_name} - erro de autenticação: {short_error[:100]}")
                 else:
                     # Outros erros: marca como indisponível mas não bloqueia permanentemente
                     validation_results[model_name] = False
                     self.validated_models[model_name] = False
-                    logger.warning(f"⚠️ Modelo {model_name} retornou erro na validação: {error_str}")
+                    logger.debug(f"Modelo {model_name} retornou erro na validação: {short_error[:100]}")
         
         self.last_validation = datetime.now()
         
         available_count = sum(1 for v in validation_results.values() if v)
-        logger.info(f"Validação concluída: {available_count}/{len(self.AVAILABLE_MODELS)} modelos disponíveis")
+        # Log resumido apenas em arquivo (DEBUG)
+        logger.debug(f"Validação concluída: {available_count}/{len(self.AVAILABLE_MODELS)} modelos disponíveis")
         
         return validation_results
     

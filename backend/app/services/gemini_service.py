@@ -33,11 +33,11 @@ class GeminiService:
                 available = self.model_router.get_validated_models()
                 if available:
                     self.model = available[0]
-                    logger.info(f"✅ Modelo inicial definido: {self.model}")
+                    logger.debug(f"Modelo inicial definido: {self.model}")
                 else:
-                    logger.warning("⚠️ Nenhum modelo disponível após validação. O sistema tentará usar modelos mesmo assim.")
+                    logger.debug("Nenhum modelo disponível após validação. O sistema tentará usar modelos mesmo assim.")
             except Exception as e:
-                logger.error(f"❌ Erro ao validar modelos na inicialização: {e}")
+                logger.debug(f"Erro ao validar modelos na inicialização: {e}")
                 # Continua mesmo se validação falhar - tentará validar durante uso
     
     def translate_segments(
@@ -288,10 +288,10 @@ Tradução:"""
             # Revalida modelos se necessário (a cada hora)
             if self.model_router.should_revalidate():
                 try:
-                    logger.info("Revalidando modelos disponíveis...")
+                    logger.debug("Revalidando modelos disponíveis...")
                     self.model_router.validate_available_models(self.client)
                 except Exception as e:
-                    logger.warning(f"Erro ao revalidar modelos: {e}")
+                    logger.debug(f"Erro ao revalidar modelos: {e}")
             
             # Obtém próximo modelo disponível (excluindo os já tentados)
             # Prioriza modelos validados como disponíveis
@@ -402,7 +402,7 @@ Tradução:"""
                     self.model_router.record_error(model_name, 'quota')
                     self.model_router.block_model(model_name, 'quota_exceeded')
                     self.model_router.validated_models[model_name] = False
-                    logger.warning(f"Modelo {model_name} bloqueado por cota excedida. Tentando próximo modelo...")
+                    logger.debug(f"Modelo {model_name} bloqueado por cota excedida. Tentando próximo modelo...")
                     
                     # Se ainda há tentativas, continua com próximo modelo
                     if attempt < max_retries - 1:

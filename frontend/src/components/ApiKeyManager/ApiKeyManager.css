@@ -269,7 +269,30 @@
   font-weight: 600;
   font-size: 0.875rem;
   color: #374151;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.model-category {
+  margin-bottom: 20px;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.model-category-header {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1f2937;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.model-category-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .model-item {
@@ -297,9 +320,22 @@
   color: #92400e;
 }
 
+.model-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
 .model-name {
   font-family: monospace;
   font-weight: 500;
+}
+
+.model-quota-info {
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 400;
 }
 
 .model-badge {

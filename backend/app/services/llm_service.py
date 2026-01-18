@@ -294,7 +294,7 @@ class GeminiLLMService(LLMService):
                 # Revalida modelos se necessário
                 if self.gemini_service.model_router.should_revalidate():
                     try:
-                        logger.info("Revalidando modelos disponíveis...")
+                        logger.debug("Revalidando modelos disponíveis...")
                         self.gemini_service.model_router.validate_available_models(self.gemini_service.client)
                     except Exception as e:
                         logger.debug(f"Erro ao revalidar modelos: {e}")

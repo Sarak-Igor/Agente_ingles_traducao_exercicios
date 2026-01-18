@@ -43,6 +43,7 @@ class ApiKey(Base):
     video_id = Column(UUID(as_uuid=True), ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, index=True)
     service = Column(String(50), nullable=False)  # 'gemini', 'openai', etc.
     encrypted_key = Column(Text, nullable=False)  # Chave criptografada
+    is_free_tier = Column(String(10), nullable=False, default='free')  # 'free' ou 'paid'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     video = relationship("Video", back_populates="api_keys")
@@ -77,3 +78,17 @@ class TokenUsage(Base):
     total_tokens = Column(Integer, default=0)  # Total de tokens (input + output)
     requests = Column(Integer, default=1)  # Número de requisições
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Word(Base):
+    __tablename__ = "words"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word = Column(String(200), nullable=False, index=True)  # A palavra em si
+    language = Column(String(10), nullable=False, index=True)  # 'en' ou 'pt'
+    translation = Column(String(200), nullable=True)  # Tradução da palavra (opcional)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    
+    __table_args__ = (
+        UniqueConstraint('word', 'language', name='unique_word_language'),
+    )

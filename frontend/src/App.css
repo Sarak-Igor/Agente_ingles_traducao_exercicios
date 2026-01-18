@@ -94,6 +94,62 @@
   transition: background 0.3s ease, color 0.3s ease;
 }
 
+.sub-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid var(--border-color);
+  transition: border-color 0.3s ease;
+}
+
+.sub-tab {
+  padding: 12px 24px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: -2px;
+}
+
+.sub-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.sub-tab.active {
+  color: #7c3aed;
+  border-bottom-color: #7c3aed;
+  font-weight: 600;
+}
+
+.sub-tab-content {
+  margin-top: 24px;
+}
+
+.sub-tab-header {
+  margin-bottom: 24px;
+}
+
+.sub-tab-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  transition: color 0.3s ease;
+}
+
+.sub-tab-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  transition: color 0.3s ease;
+}
+
 @media (max-width: 768px) {
   .app-main {
     margin-left: 70px;

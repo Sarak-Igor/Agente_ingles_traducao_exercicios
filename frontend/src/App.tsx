@@ -16,6 +16,7 @@ import './App.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('translate');
+  const [llmSubTab, setLlmSubTab] = useState<'models' | 'consumption'>('models');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [videoId, setVideoId] = useState<string | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState(storage.getSourceLanguage());
@@ -212,25 +213,47 @@ function App() {
           </div>
         );
       
-      case 'api-keys':
+      case 'llm-models':
         return (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Gerenciar Chaves de API</h2>
-              <p>Configure suas chaves de API para diferentes serviços</p>
+              <h2>Modelos LLM</h2>
+              <p>Gerencie modelos e monitore consumo</p>
             </div>
-            <ApiKeyManager />
-          </div>
-        );
-      
-      case 'usage':
-        return (
-          <div className="tab-content">
-            <div className="tab-header">
-              <h2>Uso e Cota da API</h2>
-              <p>Monitore seu uso e custos</p>
+            <div className="sub-tabs">
+              <button
+                className={`sub-tab ${llmSubTab === 'models' ? 'active' : ''}`}
+                onClick={() => setLlmSubTab('models')}
+              >
+                Modelos
+              </button>
+              <button
+                className={`sub-tab ${llmSubTab === 'consumption' ? 'active' : ''}`}
+                onClick={() => setLlmSubTab('consumption')}
+              >
+                Consumo
+              </button>
             </div>
-            <ApiUsage />
+            <div className="sub-tab-content">
+              {llmSubTab === 'models' && (
+                <>
+                  <div className="sub-tab-header">
+                    <h3>Gerenciar Chaves de API</h3>
+                    <p>Configure suas chaves de API para diferentes serviços</p>
+                  </div>
+                  <ApiKeyManager />
+                </>
+              )}
+              {llmSubTab === 'consumption' && (
+                <>
+                  <div className="sub-tab-header">
+                    <h3>Uso e Cota da API</h3>
+                    <p>Monitore seu uso e custos</p>
+                  </div>
+                  <ApiUsage />
+                </>
+              )}
+            </div>
           </div>
         );
       

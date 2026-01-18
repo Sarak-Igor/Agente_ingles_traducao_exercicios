@@ -39,8 +39,8 @@ if (!pythonPath) {
   process.exit(1);
 }
 
-// Executa uvicorn
-const args = ['-m', 'uvicorn', 'app.main:app', '--reload'];
+// Executa uvicorn com logs mínimos
+const args = ['-m', 'uvicorn', 'app.main:app', '--reload', '--log-level', 'warning', '--no-access-log'];
 const proc = spawn(pythonPath, args, {
   cwd: backendDir,
   stdio: 'inherit',

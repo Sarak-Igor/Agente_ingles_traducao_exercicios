@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.database import get_db
-from app.models.database import Video, Translation, ApiKey
+from app.models.database import Video, Translation, ApiKey, Word
 from app.services.encryption import encryption_service
 from app.services.gemini_service import GeminiService
 from app.services.model_router import ModelRouter
@@ -647,9 +648,10 @@ async def check_practice_answer(
         # Para palavras avulsas (word-*)
         if isinstance(phrase_id, str) and phrase_id.startswith('word-'):
             correct_answer = request.get('correct_answer')
-            if not correct_answer:
-                # Se não veio no request, tenta traduzir usando LLM
-                word = phrase_id.replace('word-', '')
+            word = request.get('word')  # Palavra original para traduzir se necessário
+            
+            if not correct_answer and word:
+                # Se não veio tradução mas veio a palavra, tenta traduzir usando LLM
                 try:
                     # Busca tradução usando serviços disponíveis
                     source_lang = "en" if direction == "en-to-pt" else "pt"
@@ -667,10 +669,20 @@ async def check_practice_answer(
                         except:
                             pass
                     
-                    # Se não conseguiu, usa tradução simples (retorna a palavra como fallback)
+                    # Se não conseguiu, tenta buscar do banco de palavras
+                    if not correct_answer:
+                        word_obj = db.query(Word).filter(
+                            Word.word == word.lower(),
+                            Word.language == source_lang
+                        ).first()
+                        if word_obj and word_obj.translation:
+                            correct_answer = word_obj.translation
+                    
+                    # Se ainda não conseguiu, usa a palavra como fallback
                     if not correct_answer:
                         correct_answer = word  # Fallback
-                except:
+                except Exception as e:
+                    logger.debug(f"Erro ao traduzir palavra: {e}")
                     correct_answer = word  # Fallback
             
             is_correct = check_answer_similarity(user_answer, correct_answer)
@@ -1118,3 +1130,273 @@ def calculate_similarity(text1: str, text2: str) -> float:
     union = words1.union(words2)
     
     return len(intersection) / len(union) if union else 0.0
+
+
+@router.get("/words")
+async def list_words(
+    language: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Lista palavras do banco de dados
+    
+    Query params:
+        language: Idioma das palavras ('en' ou 'pt') - opcional
+    """
+    try:
+        query = db.query(Word)
+        
+        if language and language in ['en', 'pt']:
+            query = query.filter(Word.language == language)
+        
+        words = query.order_by(Word.created_at.desc()).all()
+        
+        return {
+            "words": [
+                {
+                    "id": str(word.id),
+                    "word": word.word,
+                    "language": word.language,
+                    "translation": word.translation,
+                    "created_at": word.created_at.isoformat() if word.created_at else None
+                }
+                for word in words
+            ],
+            "total": len(words)
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar palavras: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar palavras: {str(e)}")
+
+
+@router.post("/words")
+async def add_words(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Adiciona palavras ao banco de dados
+    
+    Body:
+        words: Lista de palavras ['word1', 'word2', ...]
+        language: Idioma das palavras ('en' ou 'pt')
+    """
+    try:
+        words_list = request.get('words', [])
+        language = request.get('language', 'en')
+        
+        if not words_list:
+            raise HTTPException(status_code=400, detail="Lista de palavras vazia")
+        
+        if language not in ['en', 'pt']:
+            raise HTTPException(status_code=400, detail="Idioma deve ser 'en' ou 'pt'")
+        
+        added_count = 0
+        skipped_count = 0
+        
+        for word_text in words_list:
+            word_text = word_text.strip().lower()
+            if not word_text:
+                continue
+            
+            # Verifica se já existe
+            existing = db.query(Word).filter(
+                Word.word == word_text,
+                Word.language == language
+            ).first()
+            
+            if existing:
+                skipped_count += 1
+                continue
+            
+            # Adiciona nova palavra
+            new_word = Word(
+                word=word_text,
+                language=language
+            )
+            db.add(new_word)
+            added_count += 1
+        
+        db.commit()
+        
+        return {
+            "message": f"Palavras processadas com sucesso",
+            "added": added_count,
+            "skipped": skipped_count,
+            "total": len(words_list)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao adicionar palavras: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao adicionar palavras: {str(e)}")
+
+
+@router.delete("/words/{word_id}")
+async def delete_word(
+    word_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Deleta uma palavra do banco de dados
+    """
+    try:
+        try:
+            word_uuid = UUID(word_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="ID de palavra inválido")
+        
+        word = db.query(Word).filter(Word.id == word_uuid).first()
+        
+        if not word:
+            raise HTTPException(status_code=404, detail="Palavra não encontrada")
+        
+        db.delete(word)
+        db.commit()
+        
+        return {
+            "message": "Palavra deletada com sucesso",
+            "deleted_word": word.word
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao deletar palavra: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar palavra: {str(e)}")
+
+
+@router.post("/words/get")
+async def get_words_for_practice(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Busca palavras das músicas traduzidas (e opcionalmente palavras adicionadas manualmente) para prática
+    
+    Body:
+        direction: 'en-to-pt' ou 'pt-to-en'
+        difficulty: 'easy', 'medium', 'hard' (opcional, para filtrar)
+        video_ids: Lista de IDs de vídeos (opcional - deixe vazio para usar todos)
+        limit: Número máximo de palavras (opcional, padrão: 1)
+    """
+    try:
+        direction = request.get('direction', 'en-to-pt')
+        difficulty = request.get('difficulty', 'medium')
+        video_ids = request.get('video_ids')
+        limit = request.get('limit', 1)
+        
+        # Determina idioma de origem baseado na direção
+        source_lang = "en" if direction == "en-to-pt" else "pt"
+        target_lang = "pt" if direction == "en-to-pt" else "en"
+        
+        # 1. Busca palavras das traduções das músicas (base principal)
+        query = db.query(Translation).join(Video)
+        
+        if video_ids:
+            video_ids_list = [UUID(vid) for vid in video_ids]
+            query = query.filter(Video.id.in_(video_ids_list))
+        
+        # Filtra por direção de tradução
+        if direction == "en-to-pt":
+            query = query.filter(
+                Translation.source_language == "en",
+                Translation.target_language == "pt"
+            )
+        else:  # pt-to-en
+            query = query.filter(
+                Translation.source_language == "pt",
+                Translation.target_language == "en"
+            )
+        
+        translations = query.all()
+        
+        # Extrai palavras das traduções
+        words_from_music = []
+        if translations:
+            words_from_music = extract_words_from_translations(translations, direction, difficulty)
+        
+        # 2. Busca palavras adicionadas manualmente ao banco (complemento)
+        manual_words_query = db.query(Word).filter(Word.language == source_lang)
+        
+        # Filtra por dificuldade (baseado no tamanho da palavra)
+        if difficulty == "easy":
+            manual_words_query = manual_words_query.filter(func.length(Word.word) <= 4)
+        elif difficulty == "hard":
+            manual_words_query = manual_words_query.filter(func.length(Word.word) >= 6)
+        # medium: sem filtro de tamanho
+        
+        manual_words = manual_words_query.all()
+        words_from_db = [w.word for w in manual_words]
+        
+        # 3. Combina ambas as fontes (prioriza palavras das músicas)
+        all_words = list(set(words_from_music + words_from_db))
+        
+        if not all_words:
+            error_msg = "Nenhuma palavra encontrada."
+            if not translations:
+                error_msg += " Traduza algumas músicas primeiro ou adicione palavras usando o botão 'Adicionar Palavras'."
+            else:
+                error_msg += " Adicione palavras usando o botão 'Adicionar Palavras'."
+            raise HTTPException(status_code=404, detail=error_msg)
+        
+        # Seleciona palavra(s) aleatória(s)
+        import random
+        selected_words = random.sample(all_words, min(limit, len(all_words)))
+        
+        # Para cada palavra selecionada, busca tradução se disponível
+        result = []
+        for word_text in selected_words:
+            translation = None
+            
+            # Primeiro, tenta buscar do banco de palavras adicionadas manualmente (tem prioridade)
+            manual_word = db.query(Word).filter(
+                Word.word == word_text,
+                Word.language == source_lang
+            ).first()
+            if manual_word and manual_word.translation:
+                translation = manual_word.translation
+            else:
+                # Se não encontrou no banco, tenta buscar tradução nas músicas
+                # Busca em todos os segmentos das traduções
+                for translation_obj in translations:
+                    for segment in translation_obj.segments:
+                        source_text = segment.get('original', '') if direction == "en-to-pt" else segment.get('translated', '')
+                        target_text = segment.get('translated', '') if direction == "en-to-pt" else segment.get('original', '')
+                        
+                        # Normaliza e verifica se a palavra está no texto fonte
+                        source_words = [w.lower().strip() for w in re.sub(r'[^\w\s]', ' ', source_text).split()]
+                        if word_text.lower() in source_words:
+                            # Encontrou a palavra, tenta extrair tradução do segmento correspondente
+                            target_words = [w.lower().strip() for w in re.sub(r'[^\w\s]', ' ', target_text).split()]
+                            if target_words:
+                                # Usa a primeira palavra da tradução como aproximação
+                                # (tradução exata será verificada no endpoint de check-answer)
+                                translation = target_words[0]
+                                break
+                    
+                    if translation:
+                        break
+            
+            result.append({
+                "id": f"word-{hash(word_text)}",
+                "word": word_text,
+                "translation": translation,  # Pode ser None, será traduzido no check-answer se necessário
+                "source_language": source_lang,
+                "target_language": target_lang
+            })
+        
+        # Se limit é 1, retorna objeto único, senão retorna lista
+        if limit == 1 and result:
+            return result[0]
+        return {"words": result}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao buscar palavras: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar palavras: {str(e)}")

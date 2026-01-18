@@ -5,6 +5,9 @@ from urllib.parse import urlparse
 from app.config import settings
 import sys
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_database_engine():
     """Cria engine do banco usando parâmetros diretos para evitar problemas de encoding"""
@@ -53,7 +56,7 @@ def create_database_engine():
         )
     except Exception as e:
         # Fallback: tenta URL direta
-        print(f"Warning: Erro ao processar URL, usando fallback: {e}")
+        logger.warning(f"Erro ao processar URL, usando fallback: {e}")
         if sys.platform == 'win32':
             os.environ['PGCLIENTENCODING'] = 'UTF8'
         return create_engine(
