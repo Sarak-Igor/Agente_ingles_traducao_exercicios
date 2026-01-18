@@ -1,0 +1,97 @@
+.api-key-container {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.api-key-toggle {
+  width: 100%;
+  padding: 14px 20px;
+  background: #f8f9fa;
+  border: none;
+  text-align: left;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-key-toggle:hover {
+  background: #e9ecef;
+}
+
+.api-key-form {
+  padding: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.api-key-info {
+  margin-bottom: 12px;
+  color: #666;
+  font-size: 14px;
+}
+
+.api-key-link {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.api-key-link:hover {
+  text-decoration: underline;
+}
+
+.api-key-input-wrapper {
+  display: flex;
+  gap: 12px;
+}
+
+.api-key-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.api-key-input:focus {
+  border-color: #667eea;
+}
+
+.api-key-save {
+  padding: 12px 24px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.api-key-save:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.api-key-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.api-key-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: #10b981;
+  font-weight: 500;
+}

@@ -1,0 +1,21 @@
+{
+  "name": "video-translation-project",
+  "version": "1.0.0",
+  "description": "Sistema de tradução de vídeos do YouTube",
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:backend dev:frontend",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "node scripts/run-backend.js",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && (if exist venv\\Scripts\\pip.exe (venv\\Scripts\\pip.exe install -r requirements.txt) else (if exist venv\\bin\\pip (venv\\bin\\pip install -r requirements.txt) else (pip install -r requirements.txt)))",
+    "install:all": "npm run install:frontend && npm run install:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "init:db": "node scripts/init-db.js"
+  },
+  "keywords": ["youtube", "translation", "subtitles"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}

@@ -1,0 +1,162 @@
+.subtitle-overlay {
+  position: absolute;
+  bottom: 60px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none;
+  padding: 0 20px;
+}
+
+/* Estilos consolidados para fullscreen - usando unidades relativas */
+/* Quando renderizado no body via Portal (fullscreen do YouTube) */
+/* Seletores mais genéricos para garantir que funcionem em qualquer contexto */
+.subtitle-overlay.subtitle-fullscreen,
+.subtitle-overlay[data-fullscreen="true"],
+body .subtitle-overlay.subtitle-fullscreen,
+body .subtitle-overlay[data-fullscreen="true"],
+html body .subtitle-overlay.subtitle-fullscreen,
+html body .subtitle-overlay[data-fullscreen="true"] {
+  position: fixed !important;
+  bottom: clamp(80px, 10vh, 150px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(90vw, 1800px) !important;
+  max-width: 1800px !important;
+  z-index: 2147483647 !important; /* z-index máximo para aparecer sobre tudo */
+  padding: 0 clamp(20px, 3vw, 50px) !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  right: auto !important;
+  top: auto !important;
+  box-sizing: border-box !important;
+}
+
+/* Fallback para fullscreen do container (caso ainda seja usado) */
+.video-player-container:fullscreen .subtitle-overlay,
+.video-player-container:-webkit-full-screen .subtitle-overlay,
+.video-player-container:-moz-full-screen .subtitle-overlay,
+.video-player-container:-ms-fullscreen .subtitle-overlay {
+  position: fixed !important;
+  bottom: clamp(80px, 10vh, 150px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(90vw, 1800px) !important;
+  z-index: 2147483647 !important;
+  padding: 0 clamp(20px, 3vw, 50px) !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+}
+
+/* Container de legendas em fullscreen */
+.subtitle-overlay.subtitle-fullscreen .subtitle-container,
+.subtitle-overlay[data-fullscreen="true"] .subtitle-container,
+body .subtitle-overlay.subtitle-fullscreen .subtitle-container,
+body .subtitle-overlay[data-fullscreen="true"] .subtitle-container,
+html body .subtitle-overlay.subtitle-fullscreen .subtitle-container,
+html body .subtitle-overlay[data-fullscreen="true"] .subtitle-container,
+.video-player-container:fullscreen .subtitle-container,
+.video-player-container:-webkit-full-screen .subtitle-container,
+.video-player-container:-moz-full-screen .subtitle-container,
+.video-player-container:-ms-fullscreen .subtitle-container {
+  background: rgba(0, 0, 0, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  padding: clamp(20px, 2.5vh, 40px) clamp(24px, 3.5vw, 50px) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9) !important;
+  max-width: 100% !important;
+  margin: 0 auto !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Linhas de legenda em fullscreen */
+.subtitle-overlay.subtitle-fullscreen .subtitle-line,
+.subtitle-overlay[data-fullscreen="true"] .subtitle-line,
+body .subtitle-overlay.subtitle-fullscreen .subtitle-line,
+body .subtitle-overlay[data-fullscreen="true"] .subtitle-line,
+html body .subtitle-overlay.subtitle-fullscreen .subtitle-line,
+html body .subtitle-overlay[data-fullscreen="true"] .subtitle-line,
+.video-player-container:fullscreen .subtitle-line,
+.video-player-container:-webkit-full-screen .subtitle-line,
+.video-player-container:-moz-full-screen .subtitle-line,
+.video-player-container:-ms-fullscreen .subtitle-line {
+  font-size: clamp(24px, 3vw, 56px) !important;
+  line-height: 1.6 !important;
+  text-shadow: 4px 4px 12px rgba(0, 0, 0, 1) !important;
+  color: inherit !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.subtitle-container {
+  max-width: 90%;
+  margin: 0 auto;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: clamp(12px, 1.5vh, 20px) clamp(16px, 2vw, 24px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.subtitle-line {
+  text-align: center;
+  font-size: clamp(16px, 2vw, 24px);
+  line-height: 1.5;
+  font-weight: 500;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  margin: 4px 0;
+  word-wrap: break-word;
+}
+
+.subtitle-original {
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.subtitle-translated {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .subtitle-overlay {
+    bottom: 50px;
+    padding: 0 12px;
+  }
+  
+  .subtitle-container {
+    padding: clamp(10px, 1.2vh, 16px) clamp(12px, 2vw, 20px);
+    max-width: 95%;
+  }
+  
+  .subtitle-line {
+    font-size: clamp(14px, 1.8vw, 20px);
+  }
+}
+
+/* Animação suave para transição de legendas */
+.subtitle-container {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

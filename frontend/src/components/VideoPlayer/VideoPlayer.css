@@ -1,0 +1,128 @@
+.video-player-container {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  height: 0;
+  overflow: hidden;
+}
+
+/* Fullscreen styles - detecta tamanho da tela e preenche corretamente */
+.video-player-container:fullscreen,
+.video-player-container:-webkit-full-screen,
+.video-player-container:-moz-full-screen,
+.video-player-container:-ms-fullscreen {
+  max-width: 100vw !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 999999 !important;
+}
+
+.video-player-container:fullscreen .video-wrapper,
+.video-player-container:-webkit-full-screen .video-wrapper,
+.video-player-container:-moz-full-screen .video-wrapper,
+.video-player-container:-ms-fullscreen .video-wrapper {
+  padding-bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  /* Mantém proporção 16:9, preenchendo a tela sem distorção */
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.youtube-player {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Garante que o iframe do YouTube ocupe todo o espaço em fullscreen mantendo proporção */
+.video-player-container:fullscreen .youtube-player,
+.video-player-container:-webkit-full-screen .youtube-player,
+.video-player-container:-moz-full-screen .youtube-player,
+.video-player-container:-ms-fullscreen .youtube-player {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 100vw !important;
+  height: 56.25vw !important; /* 16:9 aspect ratio baseado na largura */
+  max-height: 100vh !important;
+  max-width: 177.78vh !important; /* 16:9 aspect ratio baseado na altura */
+}
+
+.video-player-container:fullscreen .youtube-player > div,
+.video-player-container:-webkit-full-screen .youtube-player > div,
+.video-player-container:-moz-full-screen .youtube-player > div,
+.video-player-container:-ms-fullscreen .youtube-player > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.video-player-container:fullscreen .youtube-player iframe,
+.video-player-container:-webkit-full-screen .youtube-player iframe,
+.video-player-container:-moz-full-screen .youtube-player iframe,
+.video-player-container:-ms-fullscreen .youtube-player iframe {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.fullscreen-toggle-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  backdrop-filter: blur(10px);
+}
+
+.fullscreen-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+@media (max-width: 768px) {
+  .video-player-container {
+    border-radius: 0;
+  }
+}
