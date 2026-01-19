@@ -13,9 +13,10 @@ class JobService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_job(self, video_id: UUID = None) -> Job:
+    def create_job(self, user_id: UUID, video_id: UUID = None) -> Job:
         """Cria um novo job"""
         job = Job(
+            user_id=user_id,
             video_id=video_id,
             status="queued",
             progress=0,
@@ -56,6 +57,7 @@ class JobService:
     def process_translation_job(
         self,
         job_id: UUID,
+        user_id: UUID,
         youtube_url: str,
         source_language: str,
         target_language: str,
@@ -73,12 +75,16 @@ class JobService:
             youtube_service = YouTubeService()
             video_id = youtube_service.extract_video_id(youtube_url)
             
-            # Verifica se vídeo já existe
-            video = self.db.query(Video).filter(Video.youtube_id == video_id).first()
+            # Verifica se vídeo já existe para este usuário
+            video = self.db.query(Video).filter(
+                Video.youtube_id == video_id,
+                Video.user_id == user_id
+            ).first()
             if not video:
                 # Busca informações do vídeo (título, duração)
                 video_info = youtube_service.get_video_info(video_id)
                 video = Video(
+                    user_id=user_id,
                     youtube_id=video_id,
                     title=video_info.get('title'),
                     duration=video_info.get('duration')
@@ -136,24 +142,27 @@ class JobService:
                 libretranslate_url = os.getenv("LIBRETRANSLATE_URL", "http://localhost:5000")
                 translation_config = {"api_url": libretranslate_url}
             elif translation_service_name == "gemini":
-                # Se usar Gemini, precisa da API key
-                # Salva chave de API criptografada (se não existir)
+                # Se usar Gemini, precisa da API key do usuário
+                # Busca chave do usuário (não do vídeo)
                 existing_key = self.db.query(ApiKey).filter(
-                    ApiKey.video_id == video.id,
+                    ApiKey.user_id == user_id,
                     ApiKey.service == "gemini"
                 ).first()
                 
-                if not existing_key:
+                if not existing_key and gemini_api_key:
                     encrypted_key = encryption_service.encrypt(gemini_api_key)
                     api_key = ApiKey(
-                        video_id=video.id,
+                        user_id=user_id,
+                        video_id=None,  # Chaves são do usuário, não do vídeo
                         service="gemini",
                         encrypted_key=encrypted_key
                     )
                     self.db.add(api_key)
                     self.db.commit()
-                else:
+                elif existing_key:
                     encrypted_key = existing_key.encrypted_key
+                else:
+                    raise Exception("Chave de API Gemini não encontrada e nenhuma foi fornecida")
                 
                 decrypted_key = encryption_service.decrypt(encrypted_key)
                 translation_config = {"api_key": decrypted_key}
@@ -183,31 +192,34 @@ class JobService:
             services_to_try.append(("libretranslate", {"api_url": libretranslate_url}))
             
             # 2. Por último, tenta Gemini (LLM) apenas como fallback se tiver API key
-            if gemini_api_key:
-                    # Salva chave de API se necessário
-                    existing_key = self.db.query(ApiKey).filter(
-                        ApiKey.video_id == video.id,
-                        ApiKey.service == "gemini"
-                    ).first()
-                    
-                    if not existing_key:
-                        encrypted_key = encryption_service.encrypt(gemini_api_key)
-                        api_key = ApiKey(
-                            video_id=video.id,
-                            service="gemini",
-                            encrypted_key=encrypted_key
-                        )
-                        self.db.add(api_key)
-                        self.db.commit()
-                    else:
-                        encrypted_key = existing_key.encrypted_key
-                    
-                    try:
-                        decrypted_key = encryption_service.decrypt(encrypted_key)
-                        # Adiciona db ao config para rastreamento de tokens
-                        services_to_try.append(("gemini", {"api_key": decrypted_key, "db": self.db}))
-                    except Exception as e:
-                        pass
+            # Busca chave do usuário (não do vídeo)
+            existing_gemini_key = self.db.query(ApiKey).filter(
+                ApiKey.user_id == user_id,
+                ApiKey.service == "gemini"
+            ).first()
+            
+            if existing_gemini_key:
+                try:
+                    decrypted_key = encryption_service.decrypt(existing_gemini_key.encrypted_key)
+                    # Adiciona db ao config para rastreamento de tokens
+                    services_to_try.append(("gemini", {"api_key": decrypted_key, "db": self.db}))
+                except Exception as e:
+                    logger.debug(f"Erro ao descriptografar chave Gemini: {e}")
+            elif gemini_api_key:
+                # Se não existe chave salva mas foi fornecida, salva para o usuário
+                try:
+                    encrypted_key = encryption_service.encrypt(gemini_api_key)
+                    api_key = ApiKey(
+                        user_id=user_id,
+                        video_id=None,  # Chaves são do usuário, não do vídeo
+                        service="gemini",
+                        encrypted_key=encrypted_key
+                    )
+                    self.db.add(api_key)
+                    self.db.commit()
+                    services_to_try.append(("gemini", {"api_key": gemini_api_key, "db": self.db}))
+                except Exception as e:
+                    logger.debug(f"Erro ao salvar chave Gemini: {e}")
             
             # Tenta cada serviço até encontrar um disponível
             selected_service_name = None
@@ -257,32 +269,38 @@ class JobService:
             
             # Se nenhum serviço funcionou
             if not translation_service:
-                # Se não tentou Gemini ainda e tem API key, tenta como último recurso
-                if "gemini" not in tried_services and gemini_api_key:
+                # Se não tentou Gemini ainda, busca chave do usuário
+                if "gemini" not in tried_services:
                     try:
-                        # Salva chave de API se necessário
+                        # Busca chave do usuário (não do vídeo)
                         existing_key = self.db.query(ApiKey).filter(
-                            ApiKey.video_id == video.id,
+                            ApiKey.user_id == user_id,
                             ApiKey.service == "gemini"
                         ).first()
                         
-                        if not existing_key:
+                        if existing_key:
+                            decrypted_key = encryption_service.decrypt(existing_key.encrypted_key)
+                            translation_service = TranslationServiceFactory.create(
+                                "gemini",
+                                {"api_key": decrypted_key, "db": self.db}
+                            )
+                        elif gemini_api_key:
+                            # Se não existe mas foi fornecida, salva para o usuário
                             encrypted_key = encryption_service.encrypt(gemini_api_key)
                             api_key = ApiKey(
-                                video_id=video.id,
+                                user_id=user_id,
+                                video_id=None,  # Chaves são do usuário, não do vídeo
                                 service="gemini",
                                 encrypted_key=encrypted_key
                             )
                             self.db.add(api_key)
                             self.db.commit()
+                            translation_service = TranslationServiceFactory.create(
+                                "gemini",
+                                {"api_key": gemini_api_key, "db": self.db}
+                            )
                         else:
-                            encrypted_key = existing_key.encrypted_key
-                        
-                        decrypted_key = encryption_service.decrypt(encrypted_key)
-                        translation_service = TranslationServiceFactory.create(
-                            "gemini",
-                            {"api_key": decrypted_key, "db": self.db}
-                        )
+                            translation_service = None
                         
                         if translation_service.is_available():
                             selected_service_name = "gemini"
@@ -379,6 +397,7 @@ class JobService:
             # Verifica se tradução já existe
             existing_translation = self.db.query(Translation).filter(
                 Translation.video_id == video.id,
+                Translation.user_id == user_id,
                 Translation.source_language == source_language,
                 Translation.target_language == target_language
             ).first()
@@ -387,6 +406,7 @@ class JobService:
                 existing_translation.segments = segments_json
             else:
                 translation = Translation(
+                    user_id=user_id,
                     video_id=video.id,
                     source_language=source_language,
                     target_language=target_language,

@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api.routes import video, jobs, practice, api_keys, usage
+from app.api.routes import video, jobs, practice, api_keys, usage, auth, chat
 from app.database import engine, Base
 from app.services.logging_config import setup_logging
 # Importa modelos para garantir que sejam registrados no Base.metadata
-from app.models.database import Video, Translation, ApiKey, Job, TokenUsage
+from app.models.database import Video, Translation, ApiKey, Job, TokenUsage, User, UserProfile, ChatSession, ChatMessage
 
 # Configura logging
 setup_logging("INFO")
@@ -34,6 +34,8 @@ app.include_router(jobs.router)
 app.include_router(practice.router)
 app.include_router(api_keys.router)
 app.include_router(usage.router)
+app.include_router(auth.router)
+app.include_router(chat.router)
 
 
 @app.get("/")

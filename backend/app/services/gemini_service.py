@@ -35,9 +35,19 @@ class GeminiService:
                     self.model = available[0]
                     logger.info(f"✅ Modelo inicial definido: {self.model}")
                 else:
-                    logger.warning("⚠️ Nenhum modelo disponível após validação. O sistema tentará usar modelos mesmo assim.")
+                    # Verifica se todos foram bloqueados ou se houve erro na validação
+                    blocked = self.model_router.get_blocked_models_list()
+                    if len(blocked) == len(self.model_router.AVAILABLE_MODELS):
+                        logger.warning("⚠️ Todos os modelos foram bloqueados durante validação (provavelmente sem cota)")
+                    else:
+                        logger.warning("⚠️ Nenhum modelo disponível após validação. O sistema tentará usar modelos mesmo assim.")
             except Exception as e:
-                logger.error(f"❌ Erro ao validar modelos na inicialização: {e}")
+                error_str = str(e)
+                logger.error(f"❌ Erro ao validar modelos na inicialização: {error_str}")
+                
+                # Se for erro de autenticação, loga mas não bloqueia modelos
+                if '401' in error_str or '403' in error_str or 'invalid' in error_str.lower() or 'unauthorized' in error_str.lower():
+                    logger.warning("⚠️ Erro de autenticação na validação - chave pode estar inválida")
                 # Continua mesmo se validação falhar - tentará validar durante uso
     
     def translate_segments(
@@ -464,14 +474,8 @@ Texto: {text}
 
 Tradução:"""
         
-        # Modelos em ordem de prioridade - gemini-1.5-flash geralmente tem melhor suporte no free tier
-        models_to_try = [
-            'gemini-1.5-flash',  # Prioriza free tier
-            'gemini-1.5-pro',
-            'gemini-2.0-flash',
-            'gemini-2.5-flash', 
-            'gemini-2.5-pro'
-        ]
+        # Usa modelos do router (que pode ter lista expandida dinamicamente)
+        models_to_try = self.model_router.AVAILABLE_MODELS.copy()
         
         max_retries = 3
         last_error = None

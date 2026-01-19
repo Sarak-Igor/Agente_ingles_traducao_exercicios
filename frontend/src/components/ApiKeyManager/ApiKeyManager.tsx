@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { storage } from '../../services/storage';
-import { apiKeysApi, ApiKeyStatus } from '../../services/api';
+import { apiKeysApi, ApiKeyStatus, ApiKeyResponse } from '../../services/api';
 import './ApiKeyManager.css';
 
 interface ApiKey {
@@ -10,6 +9,7 @@ interface ApiKey {
   isActive: boolean;
   status?: ApiKeyStatus | null;
   checkingStatus?: boolean;
+  backendId?: string; // ID do backend
 }
 
 const SERVICES = [
@@ -28,99 +28,90 @@ export const ApiKeyManager = () => {
     loadApiKeys();
   }, []);
 
-    const loadApiKeys = () => {
-    const keys: ApiKey[] = [];
-    
-    // Carrega chave Gemini do storage
-    const geminiKey = storage.getGeminiApiKey();
-    if (geminiKey) {
-      keys.push({
-        id: 'gemini-1',
-        service: 'gemini',
-        key: geminiKey,
-        isActive: true,
+  const loadApiKeys = async () => {
+    try {
+      // Carrega chaves do backend (do usuário atual)
+      const response = await apiKeysApi.list();
+      const backendKeys = response.api_keys || [];
+      
+      // Converte para formato local (sem expor as chaves - backend não retorna)
+      // Por enquanto, vamos mostrar apenas os serviços que têm chaves salvas
+      const keys: ApiKey[] = backendKeys.map((bk: ApiKeyResponse) => ({
+        id: `${bk.service}-${bk.id}`,
+        backendId: bk.id,
+        service: bk.service,
+        key: '••••••••••••••••', // Não expõe a chave real
+        isActive: bk.service === 'gemini',
         status: null,
         checkingStatus: false,
-      });
-    }
+      }));
 
-    // Carrega outras chaves do localStorage
-    const openRouterKey = localStorage.getItem('openrouter_api_key');
-    if (openRouterKey) {
-      keys.push({
-        id: 'openrouter-1',
-        service: 'openrouter',
-        key: openRouterKey,
-        isActive: false,
-        status: null,
-        checkingStatus: false,
-      });
-    }
-
-    const groqKey = localStorage.getItem('groq_api_key');
-    if (groqKey) {
-      keys.push({
-        id: 'groq-1',
-        service: 'groq',
-        key: groqKey,
-        isActive: false,
-        status: null,
-        checkingStatus: false,
-      });
-    }
-
-    const togetherKey = localStorage.getItem('together_api_key');
-    if (togetherKey) {
-      keys.push({
-        id: 'together-1',
-        service: 'together',
-        key: togetherKey,
-        isActive: false,
-        status: null,
-        checkingStatus: false,
-      });
-    }
-
-    setApiKeys(keys);
-  };
-
-  const handleSave = async (service: string, key: string) => {
-    if (service === 'gemini') {
-      storage.setGeminiApiKey(key);
-    } else {
-      localStorage.setItem(`${service}_api_key`, key);
-    }
-    
-    const trimmedKey = key.trim();
-    setNewKey({ service: 'gemini', key: '' });
-    setEditingId(null);
-    
-    // Atualiza a lista de chaves
-    loadApiKeys();
-    
-    // Verifica status automaticamente após salvar (para todas as APIs)
-    if (trimmedKey && ['gemini', 'openrouter', 'groq', 'together'].includes(service)) {
-      // Aguarda um pouco para garantir que o estado foi atualizado
-      setTimeout(() => {
-        checkApiKeyStatus({
-          id: `${service}-1`,
-          service: service,
-          key: trimmedKey,
-          isActive: service === 'gemini',
-          status: null,
-          checkingStatus: false,
-        });
-      }, 500);
+      setApiKeys(keys);
+    } catch (error) {
+      console.error('Erro ao carregar chaves de API:', error);
+      setApiKeys([]);
     }
   };
 
-  const handleDelete = (id: string, service: string) => {
-    if (service === 'gemini') {
-      localStorage.removeItem('gemini_api_key');
-    } else {
-      localStorage.removeItem(`${service}_api_key`);
+  const handleSave = async (service: string, key: string, apiKeyId?: string) => {
+    try {
+      const trimmedKey = key.trim();
+      
+      if (!trimmedKey) {
+        return;
+      }
+
+      // Salva no backend
+      await apiKeysApi.create({
+        service,
+        api_key: trimmedKey,
+      });
+      
+      setNewKey({ service: 'gemini', key: '' });
+      setEditingId(null);
+      
+      // Atualiza a lista de chaves
+      await loadApiKeys();
+      
+      // Verifica status automaticamente após salvar
+      if (['gemini', 'openrouter', 'groq', 'together'].includes(service)) {
+        // Busca a chave recém-salva para verificar status
+        setTimeout(async () => {
+          const updatedKeys = await apiKeysApi.list();
+          const savedKey = updatedKeys.api_keys.find((k: ApiKeyResponse) => k.service === service);
+          if (savedKey) {
+            // Para verificar status, precisamos da chave real (que acabamos de salvar)
+            checkApiKeyStatus({
+              id: `${service}-${savedKey.id}`,
+              backendId: savedKey.id,
+              service: service,
+              key: trimmedKey, // Usa a chave que acabamos de salvar
+              isActive: service === 'gemini',
+              status: null,
+              checkingStatus: false,
+            });
+          }
+        }, 500);
+      }
+    } catch (error: any) {
+      console.error('Erro ao salvar chave de API:', error);
+      alert(error.response?.data?.detail || 'Erro ao salvar chave de API');
     }
-    loadApiKeys();
+  };
+
+  const handleDelete = async (id: string, service: string, backendId?: string) => {
+    try {
+      if (backendId) {
+        await apiKeysApi.delete(backendId);
+      } else {
+        // Fallback: tenta deletar por serviço
+        await apiKeysApi.deleteByService(service);
+      }
+      await loadApiKeys();
+    } catch (error: any) {
+      console.error('Erro ao deletar chave de API:', error);
+      alert(error.response?.data?.detail || 'Erro ao deletar chave de API');
+    }
   };
 
   const handleAdd = () => {
@@ -134,8 +125,6 @@ export const ApiKeyManager = () => {
   };
 
   const checkApiKeyStatus = async (apiKey: ApiKey) => {
-    // Suporta todos os serviços agora
-
     // Marca como verificando usando função de callback para garantir estado atualizado
     setApiKeys(prevKeys => prevKeys.map(k => 
       k.id === apiKey.id || (k.service === apiKey.service && k.key === apiKey.key)
@@ -144,7 +133,15 @@ export const ApiKeyManager = () => {
     ));
 
     try {
-      const status = await apiKeysApi.checkStatus(apiKey.key, apiKey.service);
+      let status: ApiKeyStatus;
+      
+      // Se a chave está salva no backend (não visível), usa rota especial
+      if (apiKey.key === '••••••••••••••••' && apiKey.backendId) {
+        status = await apiKeysApi.checkSavedStatus(apiKey.service);
+      } else {
+        // Se a chave está sendo editada/fornecida, usa rota normal
+        status = await apiKeysApi.checkStatus(apiKey.key, apiKey.service);
+      }
       
       // Atualiza status usando função de callback
       setApiKeys(prevKeys => prevKeys.map(k => 
@@ -187,7 +184,9 @@ export const ApiKeyManager = () => {
                     <p className="api-key-preview">
                       {editingId === apiKey.id 
                         ? apiKey.key 
-                        : `${apiKey.key.substring(0, 12)}...${apiKey.key.substring(apiKey.key.length - 4)}`}
+                        : apiKey.key === '••••••••••••••••' 
+                          ? 'Chave salva (não visível)'
+                          : `${apiKey.key.substring(0, 12)}...${apiKey.key.substring(apiKey.key.length - 4)}`}
                     </p>
                   </div>
                 </div>
@@ -195,7 +194,7 @@ export const ApiKeyManager = () => {
                   {editingId === apiKey.id ? (
                     <>
                       <button
-                        onClick={() => handleSave(apiKey.service, apiKey.key)}
+                        onClick={() => handleSave(apiKey.service, apiKey.key, apiKey.backendId)}
                         className="btn-save"
                       >
                         Salvar
@@ -216,7 +215,7 @@ export const ApiKeyManager = () => {
                         Editar
                       </button>
                       <button
-                        onClick={() => handleDelete(apiKey.id, apiKey.service)}
+                        onClick={() => handleDelete(apiKey.id, apiKey.service, apiKey.backendId)}
                         className="btn-delete"
                       >
                         Remover
@@ -268,15 +267,54 @@ export const ApiKeyManager = () => {
                       {apiKey.status.models_status.length > 0 && (
                         <div className="models-list">
                           <div className="models-header">Status dos Modelos:</div>
-                          {apiKey.status.models_status.map((model) => (
-                            <div key={model.name} className={`model-item ${model.status}`}>
-                              <span className="model-name">{model.name}</span>
-                              <span className="model-badge">
-                                {model.available ? '✅ Disponível' : 
-                                 model.blocked ? '❌ Bloqueado' : '⚠️ Desconhecido'}
-                              </span>
-                            </div>
-                          ))}
+                          {(() => {
+                            // Agrupa modelos por categoria
+                            const categoryLabels: { [key: string]: string } = {
+                              'text': '📝 Escrita',
+                              'reasoning': '🧠 Raciocínio',
+                              'audio': '🎵 Áudio',
+                              'image': '🖼️ Imagem',
+                              'video': '🎬 Vídeo',
+                              'code': '💻 Código',
+                              'multimodal': '🌐 Multimodal'
+                            };
+                            
+                            // Usa models_by_category se disponível, senão agrupa manualmente
+                            const grouped = apiKey.status.models_by_category || (() => {
+                              const groups: { [key: string]: typeof apiKey.status.models_status } = {};
+                              apiKey.status.models_status.forEach(model => {
+                                const cat = model.category || 'text';
+                                if (!groups[cat]) groups[cat] = [];
+                                groups[cat].push(model);
+                              });
+                              return groups;
+                            })();
+                            
+                            // Ordem de exibição das categorias
+                            const categoryOrder = ['text', 'reasoning', 'audio', 'image', 'video', 'code', 'multimodal'];
+                            
+                            return categoryOrder.map(category => {
+                              const models = grouped[category];
+                              if (!models || models.length === 0) return null;
+                              
+                              return (
+                                <div key={category} className="model-category-group">
+                                  <div className="model-category-header">
+                                    {categoryLabels[category] || category}
+                                  </div>
+                                  {models.map((model) => (
+                                    <div key={model.name} className={`model-item ${model.status}`}>
+                                      <span className="model-name">{model.name}</span>
+                                      <span className="model-badge">
+                                        {model.available && !model.blocked ? '✅ Disponível' : 
+                                         model.blocked ? '❌ Bloqueado' : '⚠️ Desconhecido'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       )}
                       

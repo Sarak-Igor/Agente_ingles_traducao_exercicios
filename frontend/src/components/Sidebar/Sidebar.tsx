@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -9,13 +11,21 @@ interface SidebarProps {
 
 export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  
   const tabs = [
     { id: 'translate', label: 'Traduzir', icon: '🎵' },
     { id: 'videos', label: 'Meus Vídeos', icon: '📹' },
     { id: 'practice', label: 'Treinar Inglês', icon: '📚' },
-    { id: 'api-keys', label: 'Chaves API', icon: '🔑' },
-    { id: 'usage', label: 'Uso/Cota', icon: '📊' },
+    { id: 'chat', label: 'Chat', icon: '💬' },
+    { id: 'api-keys', label: 'Modelos LLM', icon: '🔑' },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <aside className="sidebar">
@@ -35,6 +45,23 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
         ))}
       </nav>
       <div className="sidebar-footer">
+        {user && (
+          <div className="sidebar-user">
+            <div className="user-info">
+              <span className="user-icon">👤</span>
+              <span className="user-name" title={user.email}>
+                {user.username}
+              </span>
+            </div>
+            <button
+              className="logout-button"
+              onClick={handleLogout}
+              title="Sair / Trocar Usuário"
+            >
+              🚪 Sair
+            </button>
+          </div>
+        )}
         <button className="theme-toggle" onClick={toggleTheme} title={theme === 'light' ? 'Ativar tema escuro' : 'Ativar tema claro'}>
           {theme === 'light' ? '🌙' : '☀️'}
           <span className="tab-label">Tema {theme === 'light' ? 'Escuro' : 'Claro'}</span>

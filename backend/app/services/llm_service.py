@@ -45,9 +45,12 @@ class OpenRouterLLMService(LLMService):
         """Verifica se a chave está configurada"""
         return bool(self.api_key and self.api_key.strip())
     
-    def generate_text(self, prompt: str, max_tokens: Optional[int] = None) -> str:
+    def generate_text(self, prompt: str, max_tokens: Optional[int] = None, model_name: Optional[str] = None) -> str:
         """Gera texto usando OpenRouter"""
         import httpx
+        
+        # Usa modelo fornecido ou padrão
+        model_to_use = model_name or self.model_name
         
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -60,7 +63,7 @@ class OpenRouterLLMService(LLMService):
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "openai/gpt-3.5-turbo",  # Modelo padrão (pode ser configurável)
+                        "model": model_to_use,
                         "messages": [
                             {"role": "user", "content": prompt}
                         ],
@@ -89,7 +92,7 @@ class OpenRouterLLMService(LLMService):
                             try:
                                 self.token_usage_service.record_usage(
                                     service='openrouter',
-                                    model=self.model_name,
+                                    model=model_to_use,
                                     input_tokens=input_tokens,
                                     output_tokens=output_tokens,
                                     total_tokens=total_tokens if total_tokens > 0 else None,
@@ -127,9 +130,12 @@ class GroqLLMService(LLMService):
         """Verifica se a chave está configurada"""
         return bool(self.api_key and self.api_key.strip())
     
-    def generate_text(self, prompt: str, max_tokens: Optional[int] = None) -> str:
+    def generate_text(self, prompt: str, max_tokens: Optional[int] = None, model_name: Optional[str] = None) -> str:
         """Gera texto usando Groq"""
         import httpx
+        
+        # Usa modelo fornecido ou padrão
+        model_to_use = model_name or self.model_name
         
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -140,7 +146,7 @@ class GroqLLMService(LLMService):
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "llama-3.1-8b-instant",  # Modelo rápido e eficiente
+                        "model": model_to_use,
                         "messages": [
                             {"role": "user", "content": prompt}
                         ],
@@ -170,7 +176,7 @@ class GroqLLMService(LLMService):
                             try:
                                 self.token_usage_service.record_usage(
                                     service='groq',
-                                    model=self.model_name,
+                                    model=model_to_use,
                                     input_tokens=input_tokens,
                                     output_tokens=output_tokens,
                                     total_tokens=total_tokens if total_tokens > 0 else None,
@@ -206,9 +212,12 @@ class TogetherAILLMService(LLMService):
         """Verifica se a chave está configurada"""
         return bool(self.api_key and self.api_key.strip())
     
-    def generate_text(self, prompt: str, max_tokens: Optional[int] = None) -> str:
+    def generate_text(self, prompt: str, max_tokens: Optional[int] = None, model_name: Optional[str] = None) -> str:
         """Gera texto usando Together AI"""
         import httpx
+        
+        # Usa modelo fornecido ou padrão
+        model_to_use = model_name or self.model_name
         
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -219,7 +228,7 @@ class TogetherAILLMService(LLMService):
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "meta-llama/Llama-3-8b-chat-hf",  # Modelo eficiente
+                        "model": model_to_use,
                         "messages": [
                             {"role": "user", "content": prompt}
                         ],
@@ -249,7 +258,7 @@ class TogetherAILLMService(LLMService):
                             try:
                                 self.token_usage_service.record_usage(
                                     service='together',
-                                    model=self.model_name,
+                                    model=model_to_use,
                                     input_tokens=input_tokens,
                                     output_tokens=output_tokens,
                                     total_tokens=total_tokens if total_tokens > 0 else None,

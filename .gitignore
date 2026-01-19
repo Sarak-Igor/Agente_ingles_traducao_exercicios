@@ -119,3 +119,41 @@ htmlcov/
 # Manter logs de tradução fora do controle de versão
 backend/app/logs/
 *.translation.log
+
+# ============================================
+# Windows System Files
+# ============================================
+AppData/
+Contacts/
+Desktop/
+Documents/
+Downloads/
+Favorites/
+Links/
+Music/
+Pictures/
+Searches/
+Videos/
+OneDrive/
+NTUSER.DAT*
+ntuser.dat*
+ntuser.ini
+*.TM.blf
+*.regtrans-ms
+*.LOG*
+.antigravity/
+.aws/
+.chocolatey/
+.continuum/
+.docker/
+.gemini/
+.ollama/
+.rustup/
+.ssh/
+.streamlit/
+test-results/
+test*.txt
+*_test_output.txt
+all_tests_output.txt
+mon_test_output.txt
+sim_test_output.txt

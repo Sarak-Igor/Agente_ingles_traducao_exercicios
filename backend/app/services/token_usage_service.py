@@ -19,6 +19,7 @@ class TokenUsageService:
     
     def record_usage(
         self,
+        user_id,
         service: str,
         model: str,
         input_tokens: int = 0,
@@ -30,6 +31,7 @@ class TokenUsageService:
         Registra uso de tokens para um modelo específico
         
         Args:
+            user_id: ID do usuário
             service: Nome do serviço ('gemini', 'openrouter', 'groq', 'together')
             model: Nome do modelo usado
             input_tokens: Tokens de entrada
@@ -42,6 +44,7 @@ class TokenUsageService:
                 total_tokens = input_tokens + output_tokens
             
             usage = TokenUsage(
+                user_id=user_id,
                 service=service,
                 model=model,
                 input_tokens=input_tokens,
@@ -62,6 +65,7 @@ class TokenUsageService:
     
     def get_usage_stats(
         self,
+        user_id,
         service: Optional[str] = None,
         model: Optional[str] = None,
         days: int = 30
@@ -70,6 +74,7 @@ class TokenUsageService:
         Obtém estatísticas de uso
         
         Args:
+            user_id: ID do usuário
             service: Filtrar por serviço (opcional)
             model: Filtrar por modelo (opcional)
             days: Número de dias para buscar (padrão 30)
@@ -85,7 +90,10 @@ class TokenUsageService:
                 func.sum(TokenUsage.output_tokens).label('total_output'),
                 func.sum(TokenUsage.total_tokens).label('total_tokens'),
                 func.sum(TokenUsage.requests).label('total_requests')
-            ).filter(TokenUsage.created_at >= cutoff_date)
+            ).filter(
+                TokenUsage.user_id == user_id,
+                TokenUsage.created_at >= cutoff_date
+            )
             
             if service:
                 query = query.filter(TokenUsage.service == service)
@@ -113,6 +121,7 @@ class TokenUsageService:
     
     def get_usage_by_model(
         self,
+        user_id,
         service: Optional[str] = None,
         days: int = 30
     ) -> List[Dict]:
@@ -120,6 +129,7 @@ class TokenUsageService:
         Obtém uso agrupado por modelo
         
         Args:
+            user_id: ID do usuário
             service: Filtrar por serviço (opcional)
             days: Número de dias para buscar (padrão 30)
             
@@ -137,6 +147,7 @@ class TokenUsageService:
                 func.sum(TokenUsage.total_tokens).label('total_tokens'),
                 func.sum(TokenUsage.requests).label('total_requests')
             ).filter(
+                TokenUsage.user_id == user_id,
                 TokenUsage.created_at >= cutoff_date
             ).group_by(
                 TokenUsage.service,
@@ -165,6 +176,7 @@ class TokenUsageService:
     
     def get_daily_usage(
         self,
+        user_id,
         service: Optional[str] = None,
         days: int = 30
     ) -> List[Dict]:
@@ -172,6 +184,7 @@ class TokenUsageService:
         Obtém uso diário agregado
         
         Args:
+            user_id: ID do usuário
             service: Filtrar por serviço (opcional)
             days: Número de dias para buscar (padrão 30)
             
@@ -186,6 +199,7 @@ class TokenUsageService:
                 func.sum(TokenUsage.total_tokens).label('total_tokens'),
                 func.sum(TokenUsage.requests).label('total_requests')
             ).filter(
+                TokenUsage.user_id == user_id,
                 TokenUsage.created_at >= cutoff_date
             ).group_by(
                 func.date(TokenUsage.created_at)

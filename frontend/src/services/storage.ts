@@ -6,6 +6,10 @@ const STORAGE_KEYS = {
   PRACTICE_SESSIONS: 'practice_sessions',
   CURRENT_PHRASE: 'current_practice_phrase',
   CURRENT_USER_ANSWER: 'current_user_answer',
+  AUTH_TOKEN: 'auth_token',
+  USER_ID: 'user_id',
+  USERNAME: 'username',
+  REMEMBER_ME: 'remember_me',
 } as const;
 
 export const storage = {
@@ -121,5 +125,59 @@ export const storage = {
   clearCurrentPhrase: (): void => {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_PHRASE);
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ANSWER);
+  },
+
+  // Autenticação
+  getAuthToken: (): string | null => {
+    // Tenta primeiro localStorage, depois sessionStorage
+    return localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) || sessionStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+  },
+
+  setAuthToken: (token: string, rememberMe: boolean = true): void => {
+    const storageType = rememberMe ? localStorage : sessionStorage;
+    storageType.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+    if (rememberMe) {
+      localStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'true');
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+    }
+  },
+
+  clearAuthToken: (): void => {
+    // Limpa ambos storages
+    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.USER_ID);
+    localStorage.removeItem(STORAGE_KEYS.USERNAME);
+    sessionStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+    sessionStorage.removeItem(STORAGE_KEYS.USER_ID);
+    sessionStorage.removeItem(STORAGE_KEYS.USERNAME);
+    localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+  },
+
+  setUserInfo: (userId: string, username: string, rememberMe: boolean = true): void => {
+    const storageType = rememberMe ? localStorage : sessionStorage;
+    storageType.setItem(STORAGE_KEYS.USER_ID, userId);
+    storageType.setItem(STORAGE_KEYS.USERNAME, username);
+  },
+
+  getUserId: (): string | null => {
+    return localStorage.getItem(STORAGE_KEYS.USER_ID) || sessionStorage.getItem(STORAGE_KEYS.USER_ID);
+  },
+
+  getUsername: (): string | null => {
+    return localStorage.getItem(STORAGE_KEYS.USERNAME) || sessionStorage.getItem(STORAGE_KEYS.USERNAME);
+  },
+
+  getRememberMe: (): boolean => {
+    const stored = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME);
+    return stored === 'true';
+  },
+
+  setRememberMe: (rememberMe: boolean): void => {
+    if (rememberMe) {
+      localStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'true');
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+    }
   },
 };

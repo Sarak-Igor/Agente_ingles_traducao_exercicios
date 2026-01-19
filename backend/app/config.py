@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: Optional[str] = None
     encryption_key: str
+    jwt_secret_key: Optional[str] = None
     host: str = "0.0.0.0"
     port: int = 8000
     frontend_url: str = "http://localhost:5173"

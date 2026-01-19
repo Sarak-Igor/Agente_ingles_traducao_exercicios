@@ -7,10 +7,11 @@ from app.schemas.schemas import (
     SubtitlesResponse,
     VideoCheckResponse
 )
-from app.models.database import Video, Translation
+from app.models.database import Video, Translation, User
 from app.services.youtube_service import YouTubeService
 from app.services.job_service import JobService
 from app.services.encryption import encryption_service
+from app.api.routes.auth import get_current_user
 from uuid import UUID
 import concurrent.futures
 import threading
@@ -23,6 +24,7 @@ executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
 
 def run_job_in_background(
     job_id: UUID,
+    user_id: UUID,
     youtube_url: str,
     source_language: str,
     target_language: str,
@@ -34,7 +36,7 @@ def run_job_in_background(
     try:
         job_service = JobService(db)
         job_service.process_translation_job(
-            job_id, youtube_url, source_language, target_language, gemini_api_key
+            job_id, user_id, youtube_url, source_language, target_language, gemini_api_key
         )
     finally:
         # Garante que a sessão seja fechada
@@ -45,6 +47,7 @@ def run_job_in_background(
 async def process_video(
     request: VideoProcessRequest,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Inicia processamento de tradução de vídeo"""
@@ -53,11 +56,15 @@ async def process_video(
         youtube_service = YouTubeService()
         video_id = youtube_service.extract_video_id(str(request.youtube_url))
         
-        # Verifica se já existe tradução
-        video = db.query(Video).filter(Video.youtube_id == video_id).first()
+        # Verifica se já existe tradução para este usuário
+        video = db.query(Video).filter(
+            Video.youtube_id == video_id,
+            Video.user_id == current_user.id
+        ).first()
         if video:
             existing = db.query(Translation).filter(
                 Translation.video_id == video.id,
+                Translation.user_id == current_user.id,
                 Translation.source_language == request.source_language,
                 Translation.target_language == request.target_language
             ).first()
@@ -73,14 +80,15 @@ async def process_video(
                         detail="Tradução já existe para este vídeo e idiomas. Use force_retranslate=true para retraduzir."
                     )
         
-        # Cria job
+        # Cria job associado ao usuário
         job_service = JobService(db)
-        job = job_service.create_job()
+        job = job_service.create_job(user_id=current_user.id)
         
         # Executa processamento em background (a thread criará sua própria sessão)
         executor.submit(
             run_job_in_background,
             job.id,
+            current_user.id,
             str(request.youtube_url),
             request.source_language,
             request.target_language,
@@ -104,15 +112,20 @@ async def get_subtitles(
     video_id: UUID,
     source_language: str,
     target_language: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retorna legendas e tradução de um vídeo"""
-    video = db.query(Video).filter(Video.id == video_id).first()
+    video = db.query(Video).filter(
+        Video.id == video_id,
+        Video.user_id == current_user.id
+    ).first()
     if not video:
         raise HTTPException(status_code=404, detail="Vídeo não encontrado")
     
     translation = db.query(Translation).filter(
         Translation.video_id == video_id,
+        Translation.user_id == current_user.id,
         Translation.source_language == source_language,
         Translation.target_language == target_language
     ).first()
@@ -139,6 +152,7 @@ async def check_video(
     youtube_url: str,
     source_language: str,
     target_language: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Verifica se vídeo já foi traduzido"""
@@ -146,12 +160,16 @@ async def check_video(
         youtube_service = YouTubeService()
         video_id = youtube_service.extract_video_id(youtube_url)
         
-        video = db.query(Video).filter(Video.youtube_id == video_id).first()
+        video = db.query(Video).filter(
+            Video.youtube_id == video_id,
+            Video.user_id == current_user.id
+        ).first()
         if not video:
             return VideoCheckResponse(exists=False)
         
         translation = db.query(Translation).filter(
             Translation.video_id == video.id,
+            Translation.user_id == current_user.id,
             Translation.source_language == source_language,
             Translation.target_language == target_language
         ).first()
@@ -171,13 +189,14 @@ async def check_video(
 
 @router.delete("/all")
 async def delete_all_videos(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Deleta todos os vídeos e todos os dados relacionados (traduções, API keys, jobs)"""
+    """Deleta todos os vídeos do usuário atual e todos os dados relacionados (traduções, API keys, jobs)"""
     try:
         # Conta vídeos e traduções antes de deletar para mensagem informativa
-        videos_count = db.query(Video).count()
-        translations_count = db.query(Translation).count()
+        videos_count = db.query(Video).filter(Video.user_id == current_user.id).count()
+        translations_count = db.query(Translation).filter(Translation.user_id == current_user.id).count()
         
         if videos_count == 0:
             return {
@@ -186,8 +205,8 @@ async def delete_all_videos(
                 "deleted_translations": 0
             }
         
-        # Deleta todos os vídeos (cascade vai deletar traduções, api_keys e jobs relacionados)
-        db.query(Video).delete()
+        # Deleta todos os vídeos do usuário (cascade vai deletar traduções, api_keys e jobs relacionados)
+        db.query(Video).filter(Video.user_id == current_user.id).delete()
         db.commit()
         
         return {
@@ -205,16 +224,21 @@ async def delete_translation(
     video_id: UUID,
     source_language: str,
     target_language: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Deleta uma tradução específica de um vídeo"""
     try:
-        video = db.query(Video).filter(Video.id == video_id).first()
+        video = db.query(Video).filter(
+            Video.id == video_id,
+            Video.user_id == current_user.id
+        ).first()
         if not video:
             raise HTTPException(status_code=404, detail="Vídeo não encontrado")
         
         translation = db.query(Translation).filter(
             Translation.video_id == video_id,
+            Translation.user_id == current_user.id,
             Translation.source_language == source_language,
             Translation.target_language == target_language
         ).first()
@@ -236,16 +260,23 @@ async def delete_translation(
 @router.delete("/{video_id}")
 async def delete_video(
     video_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Deleta um vídeo e todas as suas traduções e dados relacionados"""
     try:
-        video = db.query(Video).filter(Video.id == video_id).first()
+        video = db.query(Video).filter(
+            Video.id == video_id,
+            Video.user_id == current_user.id
+        ).first()
         if not video:
             raise HTTPException(status_code=404, detail="Vídeo não encontrado")
         
         # Conta traduções antes de deletar para mensagem informativa
-        translations_count = db.query(Translation).filter(Translation.video_id == video_id).count()
+        translations_count = db.query(Translation).filter(
+            Translation.video_id == video_id,
+            Translation.user_id == current_user.id
+        ).count()
         
         # Deleta o vídeo (cascade vai deletar traduções, api_keys e jobs relacionados)
         db.delete(video)
@@ -265,11 +296,15 @@ async def delete_video(
 @router.post("/{video_id}/update-title")
 async def update_video_title(
     video_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Atualiza o título de um vídeo buscando do YouTube"""
     try:
-        video = db.query(Video).filter(Video.id == video_id).first()
+        video = db.query(Video).filter(
+            Video.id == video_id,
+            Video.user_id == current_user.id
+        ).first()
         if not video:
             raise HTTPException(status_code=404, detail="Vídeo não encontrado")
         
@@ -294,17 +329,24 @@ async def update_video_title(
 
 @router.get("/list")
 async def list_videos(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     limit: int = 50,
     offset: int = 0
 ):
-    """Lista todos os vídeos traduzidos"""
+    """Lista todos os vídeos traduzidos do usuário atual"""
     try:
-        videos = db.query(Video).join(Translation).distinct().offset(offset).limit(limit).all()
+        videos = db.query(Video).join(Translation).filter(
+            Video.user_id == current_user.id,
+            Translation.user_id == current_user.id
+        ).distinct().offset(offset).limit(limit).all()
         
         result = []
         for video in videos:
-            translations = db.query(Translation).filter(Translation.video_id == video.id).all()
+            translations = db.query(Translation).filter(
+                Translation.video_id == video.id,
+                Translation.user_id == current_user.id
+            ).all()
             for translation in translations:
                 # Se não tem título, tenta buscar do YouTube
                 title = video.title

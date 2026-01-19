@@ -12,6 +12,8 @@ cryptography>=41.0.7
 redis>=5.0.1
 python-multipart>=0.0.6
 httpx>=0.25.2
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
 # Ferramentas de tradução open source
 deep-translator>=1.11.4
 argostranslate>=1.9.0

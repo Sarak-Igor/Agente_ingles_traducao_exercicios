@@ -3,7 +3,10 @@ Script para inicializar o banco de dados
 Execute: python init_db.py
 """
 from app.database import engine, Base
-from app.models.database import Video, Translation, ApiKey, Job
+from app.models.database import (
+    Video, Translation, ApiKey, Job, TokenUsage,
+    User, UserProfile, ChatSession, ChatMessage
+)
 
 if __name__ == "__main__":
     print("Criando tabelas no banco de dados...")

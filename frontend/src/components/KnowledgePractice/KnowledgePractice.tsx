@@ -115,34 +115,11 @@ Agora crie a frase usando as palavras: {words}`;
 
   const loadAvailableAgents = async () => {
     try {
-      // Busca chaves de API do localStorage para enviar ao backend
+      // Chaves de API agora são gerenciadas pelo backend (por usuário)
+      // O backend busca automaticamente as chaves do usuário autenticado
       const apiKeys: { gemini?: string; openrouter?: string; groq?: string; together?: string } = {};
       
-      const geminiKey = storage.getGeminiApiKey();
-      if (geminiKey) {
-        apiKeys.gemini = geminiKey;
-        console.log('Chave Gemini encontrada');
-      }
-      
-      const openrouterKey = localStorage.getItem('openrouter_api_key');
-      if (openrouterKey) {
-        apiKeys.openrouter = openrouterKey;
-        console.log('Chave OpenRouter encontrada');
-      }
-      
-      const groqKey = localStorage.getItem('groq_api_key');
-      if (groqKey) {
-        apiKeys.groq = groqKey;
-        console.log('Chave Groq encontrada');
-      }
-      
-      const togetherKey = localStorage.getItem('together_api_key');
-      if (togetherKey) {
-        apiKeys.together = togetherKey;
-        console.log('Chave Together encontrada');
-      }
-      
-      console.log('Enviando chaves para backend:', Object.keys(apiKeys));
+      console.log('Buscando agentes disponíveis (chaves gerenciadas pelo backend)...');
       const response = await videoApi.getAvailableAgents(apiKeys);
       console.log('Resposta completa do backend:', response);
       console.log('Agentes recebidos do backend:', response.agents);
@@ -864,7 +841,7 @@ Agora crie a frase usando as palavras: {words}`;
                   )}
                 </select>
                 {(!availableAgents || availableAgents.length === 0) && (
-                  <p className="no-agents">Nenhum agente disponível. Configure chaves de API na aba "Chaves API" e verifique as cotas.</p>
+                  <p className="no-agents">Nenhum agente disponível. Configure chaves de API na aba "Modelos LLM" e verifique as cotas.</p>
                 )}
                 {availableAgents && availableAgents.length > 0 && (
                   <p className="agents-info" style={{ marginTop: '8px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>

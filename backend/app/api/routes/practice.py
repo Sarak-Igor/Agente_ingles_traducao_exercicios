@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.database import Video, Translation, ApiKey
+from app.models.database import Video, Translation, ApiKey, User
+from app.api.routes.auth import get_current_user
 from app.services.encryption import encryption_service
 from app.services.gemini_service import GeminiService
 from app.services.model_router import ModelRouter
@@ -24,19 +25,19 @@ router = APIRouter(prefix="/api/practice", tags=["practice"])
 logger = logging.getLogger(__name__)
 
 
-def get_gemini_service(video_id: UUID, db: Session, validate_models: bool = True) -> Optional[GeminiService]:
+def get_gemini_service(user_id: UUID, db: Session, validate_models: bool = True) -> Optional[GeminiService]:
     """
-    Obtém serviço Gemini para um vídeo específico
+    Obtém serviço Gemini para um usuário específico
     Valida modelos disponíveis na inicialização
     
     Args:
-        video_id: ID do vídeo
+        user_id: ID do usuário
         db: Sessão do banco de dados
         validate_models: Se True, valida modelos disponíveis na inicialização
     """
     try:
         api_key_record = db.query(ApiKey).filter(
-            ApiKey.video_id == video_id,
+            ApiKey.user_id == user_id,
             ApiKey.service == "gemini"
         ).first()
         
@@ -58,19 +59,16 @@ def get_gemini_service(video_id: UUID, db: Session, validate_models: bool = True
 
 def get_available_llm_services(
     db: Session, 
-    video_id: Optional[UUID] = None,
+    user_id: UUID,
     api_keys_from_request: Optional[dict] = None
 ) -> List[tuple]:
     """
     Obtém todos os serviços LLM disponíveis em ordem de prioridade
     Todos os serviços recebem TokenUsageService para rastreamento de tokens
-    """
-    """
-    Obtém todos os serviços LLM disponíveis em ordem de prioridade
     
     Args:
         db: Sessão do banco de dados
-        video_id: ID do vídeo (opcional)
+        user_id: ID do usuário (obrigatório)
         api_keys_from_request: Dict com chaves de API do request (opcional)
     
     Returns:
@@ -84,27 +82,26 @@ def get_available_llm_services(
     # Cria TokenUsageService para rastreamento de tokens (compartilhado entre todos os serviços)
     token_usage_service = TokenUsageService(db)
     
-    # 1. Tenta Gemini (do banco de dados vinculado ao vídeo)
-    if video_id:
-        gemini_service = get_gemini_service(video_id, db, validate_models=False)
-        if gemini_service:
-            try:
-                # Gemini já tem token_usage_service integrado
-                gemini_llm = GeminiLLMService(gemini_service)
-                if gemini_llm.is_available():
-                    services.append(('gemini', gemini_llm))
-                    logger.info("Gemini disponível para geração de frases")
-            except Exception as e:
-                logger.debug(f"Gemini não disponível: {e}")
+    # 1. Tenta Gemini (do banco de dados vinculado ao usuário)
+    gemini_service = get_gemini_service(user_id, db, validate_models=False)
+    if gemini_service:
+        try:
+            # Gemini já tem token_usage_service integrado
+            gemini_llm = GeminiLLMService(gemini_service)
+            if gemini_llm.is_available():
+                services.append(('gemini', gemini_llm))
+                logger.info("Gemini disponível para geração de frases")
+        except Exception as e:
+            logger.debug(f"Gemini não disponível: {e}")
     
     # 2. Tenta OpenRouter
     try:
         openrouter_key = api_keys.get('openrouter')
         
-        # Se não veio no request, tenta do banco
-        if not openrouter_key and video_id:
+        # Se não veio no request, tenta do banco (do usuário)
+        if not openrouter_key:
             api_key_record = db.query(ApiKey).filter(
-                ApiKey.video_id == video_id,
+                ApiKey.user_id == user_id,
                 ApiKey.service == "openrouter"
             ).first()
             if api_key_record:
@@ -127,9 +124,9 @@ def get_available_llm_services(
     try:
         groq_key = api_keys.get('groq')
         
-        if not groq_key and video_id:
+        if not groq_key:
             api_key_record = db.query(ApiKey).filter(
-                ApiKey.video_id == video_id,
+                ApiKey.user_id == user_id,
                 ApiKey.service == "groq"
             ).first()
             if api_key_record:
@@ -151,9 +148,9 @@ def get_available_llm_services(
     try:
         together_key = api_keys.get('together')
         
-        if not together_key and video_id:
+        if not together_key:
             api_key_record = db.query(ApiKey).filter(
-                ApiKey.video_id == video_id,
+                ApiKey.user_id == user_id,
                 ApiKey.service == "together"
             ).first()
             if api_key_record:
@@ -177,6 +174,7 @@ def get_available_llm_services(
 @router.post("/available-agents")
 async def get_available_agents(
     request: dict = {},
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -199,8 +197,9 @@ async def get_available_agents(
             if not gemini_key:
                 gemini_key = os.getenv("GEMINI_API_KEY")
             if not gemini_key:
-                # Tenta buscar do banco
+                # Tenta buscar do banco (do usuário)
                 api_key_record = db.query(ApiKey).filter(
+                    ApiKey.user_id == current_user.id,
                     ApiKey.service == "gemini"
                 ).first()
                 if api_key_record:
@@ -216,11 +215,13 @@ async def get_available_agents(
                 available_models = model_router.get_validated_models()
                 if available_models:
                     for model in available_models:
+                        category = model_router.get_model_category(model)
                         agents.append({
                             "service": "gemini",
                             "model": model,
                             "display_name": f"Gemini - {model}",
-                            "available": True
+                            "available": True,
+                            "category": category
                         })
         except Exception as e:
             logger.debug(f"Gemini não disponível: {e}")
@@ -350,6 +351,7 @@ async def get_available_agents(
 @router.post("/phrase/music-context")
 async def get_music_phrase(
     request: dict,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -370,8 +372,11 @@ async def get_music_phrase(
         if video_ids:
             video_ids_list = [UUID(vid) for vid in video_ids]
         
-        # Busca traduções disponíveis
-        query = db.query(Translation).join(Video)
+        # Busca traduções disponíveis (apenas do usuário atual)
+        query = db.query(Translation).join(Video).filter(
+            Translation.user_id == current_user.id,
+            Video.user_id == current_user.id
+        )
         
         if video_ids_list:
             query = query.filter(Video.id.in_(video_ids_list))
@@ -430,6 +435,7 @@ async def get_music_phrase(
 @router.post("/phrase/new-context")
 async def generate_practice_phrase(
     request: dict,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -447,8 +453,11 @@ async def generate_practice_phrase(
         difficulty = request.get('difficulty', 'medium')
         video_ids = request.get('video_ids')
         
-        # Busca traduções para extrair palavras
-        query = db.query(Translation).join(Video)
+        # Busca traduções para extrair palavras (apenas do usuário atual)
+        query = db.query(Translation).join(Video).filter(
+            Translation.user_id == current_user.id,
+            Video.user_id == current_user.id
+        )
         
         if video_ids:
             video_ids_list = [UUID(vid) for vid in video_ids]
@@ -483,10 +492,6 @@ async def generate_practice_phrase(
                 detail="Não foi possível extrair palavras suficientes"
             )
         
-        # Seleciona vídeo aleatório para obter API key
-        translation = random.choice(translations)
-        video = db.query(Video).filter(Video.id == translation.video_id).first()
-        
         source_lang = "en" if direction == "en-to-pt" else "pt"
         target_lang = "pt" if direction == "en-to-pt" else "en"
         
@@ -497,8 +502,8 @@ async def generate_practice_phrase(
         custom_prompt = request.get('custom_prompt')
         preferred_agent = request.get('preferred_agent')  # {'service': '...', 'model': '...'}
         
-        # Obtém todos os serviços LLM disponíveis
-        available_services = get_available_llm_services(db, video.id, api_keys_from_request)
+        # Obtém todos os serviços LLM disponíveis (do usuário)
+        available_services = get_available_llm_services(db, current_user.id, api_keys_from_request)
         
         if not available_services:
             raise HTTPException(
@@ -623,6 +628,7 @@ async def generate_practice_phrase(
 @router.post("/check-answer")
 async def check_practice_answer(
     request: dict,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -729,7 +735,10 @@ async def check_practice_answer(
                     detail=f"Formato de UUID inválido no ID da frase: {translation_id}"
                 )
             
-            translation = db.query(Translation).filter(Translation.id == translation_uuid).first()
+            translation = db.query(Translation).filter(
+                Translation.id == translation_uuid,
+                Translation.user_id == current_user.id
+            ).first()
             
         except HTTPException:
             raise

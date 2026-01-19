@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.token_usage_service import TokenUsageService
+from app.models.database import User
+from app.api.routes.auth import get_current_user
 from typing import Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -23,6 +25,7 @@ class UsageStatsResponse(BaseModel):
 async def get_usage_stats(
     service: Optional[str] = None,
     days: int = 30,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -40,13 +43,13 @@ async def get_usage_stats(
     usage_service = TokenUsageService(db)
     
     # Estatísticas gerais
-    stats = usage_service.get_usage_stats(service=service, days=days)
+    stats = usage_service.get_usage_stats(user_id=current_user.id, service=service, days=days)
     
     # Uso por modelo
-    models_usage = usage_service.get_usage_by_model(service=service, days=days)
+    models_usage = usage_service.get_usage_by_model(user_id=current_user.id, service=service, days=days)
     
     # Uso diário
-    daily_usage = usage_service.get_daily_usage(service=service, days=days)
+    daily_usage = usage_service.get_daily_usage(user_id=current_user.id, service=service, days=days)
     
     # Agrupa por serviço se não foi especificado
     if not service:
